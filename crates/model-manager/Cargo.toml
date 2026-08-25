@@ -1,6 +1,12 @@
 [package]
 name = "model-manager"
 version = "0.1.0"
-edition = "2024"
+edition = "2021"
 
 [dependencies]
+hf-hub = { version = "0.4", default-features = false, features = ["ureq"] }
+sha2 = "0.10"
+anyhow = "1"
+dirs = "5"
+
+hardware = { path = "../hardware" }

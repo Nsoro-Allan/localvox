@@ -7,3 +7,6 @@ edition = "2021"
 whisper-rs = "0.14"
 hound = "3.5"
 anyhow = "1"
+
+[dev-dependencies]
+audio = { path = "../audio" }
