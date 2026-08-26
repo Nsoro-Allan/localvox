@@ -48,6 +48,8 @@ impl Transcriber {
         params.set_print_special(false);
         params.set_print_realtime(false);
         params.set_print_timestamps(false);
+        let threads = std::thread::available_parallelism().map(|n| n.get() as i32).unwrap_or(4);
+        params.set_n_threads(threads);
         state.full(params, samples).map_err(|e| anyhow!("transcription failed: {e:?}"))?;
         let num_segments = state.full_n_segments().map_err(|e| anyhow!("failed to get segment count: {e:?}"))?;
         let mut text = String::new();

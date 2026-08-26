@@ -4,9 +4,11 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-whisper-rs = "0.14"
+whisper-rs = { version = "0.14", features = ["openblas"] }
 hound = "3.5"
 anyhow = "1"
 
 [dev-dependencies]
 audio = { path = "../audio" }
+hotkeys = { path = "../hotkeys" }
+injector = { path = "../injector" }
