@@ -18,7 +18,15 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = [] }
+tauri = { version = "2", features = ["tray-icon"] }
 tauri-plugin-opener = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+
+audio = { path = "../crates/audio" }
+asr = { path = "../crates/asr" }
+hardware = { path = "../crates/hardware" }
+model-manager = { path = "../crates/model-manager" }
+hotkeys = { path = "../crates/hotkeys" }
+injector = { path = "../crates/injector" }
+anyhow = "1"
