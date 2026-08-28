@@ -7,17 +7,16 @@ pub enum PushToTalkEvent {
     Released,
 }
 
-/// Registers Ctrl+F9 as a global push-to-talk hotkey by reading raw
-/// keyboard events via evdev — works on both X11 and Wayland, since it
-/// reads /dev/input directly instead of going through the display
-/// server. Requires your user to be in the `input` group.
 pub struct PushToTalk {
     handle: HotkeyListenerHandle,
 }
 
 impl PushToTalk {
-    pub fn new() -> Result<Self> {
-        let hotkey = hotkey_listener::parse_hotkey("Ctrl+F9")?;
+    /// `combo` looks like "Ctrl+F9" or "Shift+Alt+Insert" — any
+    /// combination of Ctrl/Alt/Shift plus one of F1–F12, ScrollLock,
+    /// Pause, or Insert.
+    pub fn new(combo: &str) -> Result<Self> {
+        let hotkey = hotkey_listener::parse_hotkey(combo)?;
         let handle = HotkeyListenerBuilder::new()
             .add_hotkey(hotkey)
             .build()?

@@ -7,7 +7,7 @@ fn main() -> anyhow::Result<()> {
     println!("Loading model...");
     let transcriber = asr::Transcriber::load("models/ggml-base.en.bin")?;
     let mut injector = Injector::new()?;
-    let ptt = PushToTalk::new()?;
+    let ptt = PushToTalk::new("Ctrl+F9")?;
     let live = audio::start_stream()?;
 
     println!("Hold Ctrl+F9 to talk, release to transcribe and type it wherever your cursor is.");

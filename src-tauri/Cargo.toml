@@ -22,6 +22,7 @@ tauri = { version = "2", features = ["tray-icon"] }
 tauri-plugin-opener = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+dirs = "5"
 
 audio = { path = "../crates/audio" }
 asr = { path = "../crates/asr" }

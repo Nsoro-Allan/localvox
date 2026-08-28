@@ -88,5 +88,48 @@ listen<string>("pipeline-status", (event) => {
   setStatus(state, payload);
 });
 
+const modCtrl = document.querySelector<HTMLInputElement>("#mod-ctrl")!;
+const modAlt = document.querySelector<HTMLInputElement>("#mod-alt")!;
+const modShift = document.querySelector<HTMLInputElement>("#mod-shift")!;
+const triggerKey = document.querySelector<HTMLSelectElement>("#trigger-key")!;
+const saveHotkeyBtn = document.querySelector<HTMLButtonElement>("#save-hotkey")!;
+const hotkeyStatus = document.querySelector<HTMLParagraphElement>("#hotkey-status")!;
+
+function applyComboToInputs(combo: string) {
+  const parts = combo.split("+");
+  const key = parts[parts.length - 1];
+  const mods = parts.slice(0, -1).map((m) => m.toUpperCase());
+  modCtrl.checked = mods.includes("CTRL");
+  modAlt.checked = mods.includes("ALT");
+  modShift.checked = mods.includes("SHIFT");
+  triggerKey.value = key;
+}
+
+function buildCombo(): string {
+  const mods: string[] = [];
+  if (modCtrl.checked) mods.push("Ctrl");
+  if (modAlt.checked) mods.push("Alt");
+  if (modShift.checked) mods.push("Shift");
+  mods.push(triggerKey.value);
+  return mods.join("+");
+}
+
+async function loadHotkey() {
+  const combo = await invoke<string>("get_hotkey");
+  applyComboToInputs(combo);
+}
+
+saveHotkeyBtn.addEventListener("click", async () => {
+  const combo = buildCombo();
+  hotkeyStatus.textContent = "Saving…";
+  try {
+    await invoke("set_hotkey", { combo });
+    hotkeyStatus.textContent = `Now listening for ${combo}`;
+  } catch (e) {
+    hotkeyStatus.textContent = `Failed: ${e}`;
+  }
+});
+
+loadHotkey();
 loadHardware();
 loadModels();

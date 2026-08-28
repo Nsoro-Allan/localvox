@@ -2552,6 +2552,7 @@ dependencies = [
  "anyhow",
  "asr",
  "audio",
+ "dirs 5.0.1",
  "hardware",
  "hotkeys",
  "injector",

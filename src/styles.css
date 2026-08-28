@@ -81,3 +81,22 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 footer { text-align: center; color: var(--text-dim); font-size: 12px; }
 kbd { font-family: var(--font-mono); background: var(--panel); border: 1px solid var(--border); border-radius: 4px; padding: 2px 6px; font-size: 11px; }
+
+.hotkey-row { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; font-family: var(--font-mono); font-size: 13px; }
+.hotkey-row label { display: flex; align-items: center; gap: 6px; color: var(--text-dim); cursor: pointer; }
+.hotkey-row input[type="checkbox"] { accent-color: var(--accent); width: 14px; height: 14px; }
+.hotkey-row select {
+  appearance: none;
+  -webkit-appearance: none;
+  background-color: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 5px 28px 5px 8px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6'><path d='M0 0l5 6 5-6z' fill='%238b9296'/></svg>");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+}
+.hotkey-row select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }

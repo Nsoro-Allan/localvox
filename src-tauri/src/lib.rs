@@ -13,6 +13,8 @@ struct StatusItem(MenuItem<tauri::Wry>);
 struct AppState {
     current_model: Mutex<String>,
     transcriber: Mutex<Option<asr::Transcriber>>,
+    ptt: Mutex<Option<hotkeys::PushToTalk>>,
+    hotkey_combo: Mutex<String>,
 }
 
 #[derive(Serialize, Clone)]
@@ -29,6 +31,39 @@ struct ModelInfo {
     id: String,
     size_mb: u64,
     downloaded: bool,
+}
+
+#[derive(serde::Serialize, serde::Deserialize)]
+struct Settings {
+    hotkey_combo: String,
+    model_id: Option<String>,
+}
+
+impl Default for Settings {
+    fn default() -> Self {
+        Self { hotkey_combo: "Ctrl+F9".to_string(), model_id: None }
+    }
+}
+
+fn settings_path() -> Option<std::path::PathBuf> {
+    let dir = dirs::data_dir()?.join("localvox");
+    std::fs::create_dir_all(&dir).ok()?;
+    Some(dir.join("settings.json"))
+}
+
+fn load_settings() -> Settings {
+    settings_path()
+        .and_then(|p| std::fs::read_to_string(p).ok())
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or_default()
+}
+
+fn save_settings(settings: &Settings) {
+    if let Some(path) = settings_path() {
+        if let Ok(json) = serde_json::to_string_pretty(settings) {
+            std::fs::write(path, json).ok();
+        }
+    }
 }
 
 #[tauri::command]
@@ -70,8 +105,31 @@ fn switch_model(app: tauri::AppHandle, state: tauri::State<Arc<AppState>>, model
     app.emit("model-switch-progress", "Loading model...".to_string()).ok();
     let transcriber = asr::Transcriber::load(path.to_str().unwrap()).map_err(|e| e.to_string())?;
     *state.transcriber.lock().unwrap() = Some(transcriber);
-    *state.current_model.lock().unwrap() = model_id;
+    *state.current_model.lock().unwrap() = model_id.clone();
+
+    let mut settings = load_settings();
+    settings.model_id = Some(model_id);
+    save_settings(&settings);
+
     app.emit("model-switch-progress", "Ready".to_string()).ok();
+    Ok(())
+}
+
+#[tauri::command]
+fn get_hotkey(state: tauri::State<Arc<AppState>>) -> String {
+    state.hotkey_combo.lock().unwrap().clone()
+}
+
+#[tauri::command]
+fn set_hotkey(state: tauri::State<Arc<AppState>>, combo: String) -> Result<(), String> {
+    let new_ptt = hotkeys::PushToTalk::new(&combo).map_err(|e| e.to_string())?;
+    *state.ptt.lock().unwrap() = Some(new_ptt);
+    *state.hotkey_combo.lock().unwrap() = combo.clone();
+
+    let mut settings = load_settings();
+    settings.hotkey_combo = combo;
+    save_settings(&settings);
+
     Ok(())
 }
 
@@ -80,6 +138,8 @@ pub fn run() {
     let state = Arc::new(AppState {
         current_model: Mutex::new(String::new()),
         transcriber: Mutex::new(None),
+        ptt: Mutex::new(None),
+        hotkey_combo: Mutex::new(String::new()),
     });
 
     tauri::Builder::default()
@@ -88,7 +148,9 @@ pub fn run() {
             get_hardware_info,
             list_models,
             get_current_model,
-            switch_model
+            switch_model,
+            get_hotkey,
+            set_hotkey
         ])
         .setup(move |app| {
             let status_item = MenuItem::with_id(app, "status", "Status: starting...", false, None::<&str>)?;
@@ -146,31 +208,45 @@ fn set_status(app: &tauri::AppHandle, text: &str) {
 }
 
 fn run_pipeline(app: tauri::AppHandle, state: Arc<AppState>) -> anyhow::Result<()> {
-    set_status(&app, "detecting hardware...");
-    let profile = hardware::detect();
-    let tier = hardware::recommend_tier(&profile);
-    let model_id = tier.recommended_model();
+    let settings = load_settings();
 
     set_status(&app, "checking model...");
-    let entry = model_manager::find_model(model_id).expect("model in manifest");
+    let model_id = match &settings.model_id {
+        Some(id) if model_manager::find_model(id).is_some() => id.clone(),
+        _ => {
+            let profile = hardware::detect();
+            let tier = hardware::recommend_tier(&profile);
+            tier.recommended_model().to_string()
+        }
+    };
+    let entry = model_manager::find_model(&model_id).expect("model in manifest");
     let model_path = model_manager::download_model(entry)?;
 
     set_status(&app, "loading model...");
     let transcriber = asr::Transcriber::load(model_path.to_str().unwrap())?;
     *state.transcriber.lock().unwrap() = Some(transcriber);
-    *state.current_model.lock().unwrap() = model_id.to_string();
+    *state.current_model.lock().unwrap() = model_id;
+
+    let combo = settings.hotkey_combo.clone();
+    let ptt = hotkeys::PushToTalk::new(&combo)?;
+    *state.ptt.lock().unwrap() = Some(ptt);
+    *state.hotkey_combo.lock().unwrap() = combo;
 
     let mut injector = injector::Injector::new()?;
-    let ptt = hotkeys::PushToTalk::new()?;
     let live = audio::start_stream()?;
 
-    set_status(&app, "idle (hold Ctrl+F9 to talk)");
+    set_status(&app, "idle");
 
     let mut buffer: Vec<f32> = Vec::new();
     let mut recording = false;
 
     loop {
-        if let Some(event) = ptt.try_recv() {
+        let event = {
+            let guard = state.ptt.lock().unwrap();
+            guard.as_ref().and_then(|p| p.try_recv())
+        };
+
+        if let Some(event) = event {
             match event {
                 hotkeys::PushToTalkEvent::Pressed => {
                     recording = true;
@@ -190,7 +266,7 @@ fn run_pipeline(app: tauri::AppHandle, state: Arc<AppState>) -> anyhow::Result<(
                             injector.inject(&text).ok();
                         }
                     }
-                    set_status(&app, "idle (hold Ctrl+F9 to talk)");
+                    set_status(&app, "idle");
                 }
             }
         }
