@@ -130,6 +130,73 @@ saveHotkeyBtn.addEventListener("click", async () => {
   }
 });
 
+interface ReplacementRule { find: string; replace: string; }
+
+const vocabInput = document.querySelector<HTMLTextAreaElement>("#vocab-input")!;
+const saveVocabBtn = document.querySelector<HTMLButtonElement>("#save-vocab")!;
+const replacementRows = document.querySelector<HTMLDivElement>("#replacement-rows")!;
+const addRuleBtn = document.querySelector<HTMLButtonElement>("#add-rule")!;
+const saveRulesBtn = document.querySelector<HTMLButtonElement>("#save-rules")!;
+
+async function loadVocabulary() {
+  const words = await invoke<string[]>("get_vocabulary");
+  vocabInput.value = words.join("\n");
+}
+
+saveVocabBtn.addEventListener("click", async () => {
+  const words = vocabInput.value.split("\n").map((w) => w.trim()).filter((w) => w.length > 0);
+  await invoke("set_vocabulary", { words });
+});
+
+function addRuleRow(find = "", replace = "") {
+  const row = document.createElement("div");
+  row.className = "replacement-row";
+
+  const findInput = document.createElement("input");
+  findInput.type = "text";
+  findInput.placeholder = "heard as...";
+  findInput.value = find;
+
+  const arrow = document.createElement("span");
+  arrow.className = "arrow";
+  arrow.textContent = "→";
+
+  const replaceInput = document.createElement("input");
+  replaceInput.type = "text";
+  replaceInput.placeholder = "correct to...";
+  replaceInput.value = replace;
+
+  const removeBtn = document.createElement("button");
+  removeBtn.type = "button";
+  removeBtn.className = "remove-rule";
+  removeBtn.textContent = "✕";
+  removeBtn.addEventListener("click", () => row.remove());
+
+  row.append(findInput, arrow, replaceInput, removeBtn);
+  replacementRows.append(row);
+}
+
+async function loadReplacements() {
+  const rules = await invoke<ReplacementRule[]>("get_replacements");
+  replacementRows.innerHTML = "";
+  for (const rule of rules) addRuleRow(rule.find, rule.replace);
+}
+
+addRuleBtn.addEventListener("click", () => addRuleRow());
+
+saveRulesBtn.addEventListener("click", async () => {
+  const rows = Array.from(replacementRows.querySelectorAll<HTMLDivElement>(".replacement-row"));
+  const rules: ReplacementRule[] = rows
+    .map((row) => {
+      const inputs = row.querySelectorAll<HTMLInputElement>("input[type=text]");
+      return { find: inputs[0].value.trim(), replace: inputs[1].value.trim() };
+    })
+    .filter((r) => r.find.length > 0);
+  await invoke("set_replacements", { rules });
+});
+
+loadVocabulary();
+loadReplacements();
 loadHotkey();
 loadHardware();
 loadModels();

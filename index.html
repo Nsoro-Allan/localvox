@@ -43,6 +43,25 @@
       <p id="hotkey-status" class="progress"></p>
     </section>
 
+    <section class="panel">
+      <h2>Vocabulary</h2>
+      <p class="hint">One word or phrase per line — names, acronyms, or jargon the model tends to mishear.</p>
+      <textarea id="vocab-input" rows="4" placeholder="Localvox&#10;whisper.cpp&#10;Tauri"></textarea>
+      <div class="panel-actions">
+        <button id="save-vocab">Save vocabulary</button>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>Corrections</h2>
+      <p class="hint">Exact find-and-replace fixes, applied after transcription.</p>
+      <div id="replacement-rows"></div>
+      <div class="panel-actions">
+        <button id="add-rule" type="button">+ Add rule</button>
+        <button id="save-rules">Save corrections</button>
+      </div>
+    </section>
+
   </main>
   <script type="module" src="/src/main.ts"></script>
 </body>

@@ -42,14 +42,26 @@ impl Transcriber {
     }
 
     pub fn transcribe(&self, samples: &[f32]) -> Result<String> {
+        self.transcribe_with_prompt(samples, "")
+    }
+
+    /// Same as `transcribe`, but biases the model toward correctly
+    /// recognizing specific words/phrases (names, jargon, acronyms) by
+    /// feeding them as whisper.cpp's initial prompt.
+    pub fn transcribe_with_prompt(&self, samples: &[f32], prompt: &str) -> Result<String> {
         let mut state = self.ctx.create_state().map_err(|e| anyhow!("failed to create state: {e:?}"))?;
+
         let mut params = FullParams::new(SamplingStrategy::Greedy { best_of: 1 });
         params.set_print_progress(false);
         params.set_print_special(false);
         params.set_print_realtime(false);
         params.set_print_timestamps(false);
+        if !prompt.is_empty() {
+            params.set_initial_prompt(prompt);
+        }
         let threads = std::thread::available_parallelism().map(|n| n.get() as i32).unwrap_or(4);
         params.set_n_threads(threads);
+
         state.full(params, samples).map_err(|e| anyhow!("transcription failed: {e:?}"))?;
         let num_segments = state.full_n_segments().map_err(|e| anyhow!("failed to get segment count: {e:?}"))?;
         let mut text = String::new();

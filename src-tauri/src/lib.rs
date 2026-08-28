@@ -15,6 +15,8 @@ struct AppState {
     transcriber: Mutex<Option<asr::Transcriber>>,
     ptt: Mutex<Option<hotkeys::PushToTalk>>,
     hotkey_combo: Mutex<String>,
+    vocabulary: Mutex<Vec<String>>,
+    replacements: Mutex<Vec<ReplacementRule>>,
 }
 
 #[derive(Serialize, Clone)]
@@ -37,13 +39,27 @@ struct ModelInfo {
 struct Settings {
     hotkey_combo: String,
     model_id: Option<String>,
+    vocabulary: Vec<String>,
+    replacements: Vec<ReplacementRule>,
 }
 
 impl Default for Settings {
     fn default() -> Self {
-        Self { hotkey_combo: "Ctrl+F9".to_string(), model_id: None }
+        Self {
+            hotkey_combo: "Ctrl+F9".to_string(),
+            model_id: None,
+            vocabulary: Vec::new(),
+            replacements: Vec::new(),
+        }
     }
 }
+
+#[derive(serde::Serialize, serde::Deserialize, Clone)]
+struct ReplacementRule {
+    find: String,
+    replace: String,
+}
+
 
 fn settings_path() -> Option<std::path::PathBuf> {
     let dir = dirs::data_dir()?.join("localvox");
@@ -64,6 +80,34 @@ fn save_settings(settings: &Settings) {
             std::fs::write(path, json).ok();
         }
     }
+}
+
+fn apply_replacements(text: &str, rules: &[ReplacementRule]) -> String {
+    let mut result = text.to_string();
+    for rule in rules {
+        if !rule.find.is_empty() {
+            result = replace_case_insensitive(&result, &rule.find, &rule.replace);
+        }
+    }
+    result
+}
+
+fn replace_case_insensitive(text: &str, find: &str, replace: &str) -> String {
+    let lower_text = text.to_ascii_lowercase();
+    let lower_find = find.to_ascii_lowercase();
+    let mut result = String::with_capacity(text.len());
+    let mut last_end = 0;
+    let mut search_start = 0;
+    while let Some(pos) = lower_text[search_start..].find(&lower_find) {
+        let start = search_start + pos;
+        let end = start + find.len();
+        result.push_str(&text[last_end..start]);
+        result.push_str(replace);
+        last_end = end;
+        search_start = end;
+    }
+    result.push_str(&text[last_end..]);
+    result
 }
 
 #[tauri::command]
@@ -133,6 +177,32 @@ fn set_hotkey(state: tauri::State<Arc<AppState>>, combo: String) -> Result<(), S
     Ok(())
 }
 
+#[tauri::command]
+fn get_vocabulary(state: tauri::State<Arc<AppState>>) -> Vec<String> {
+    state.vocabulary.lock().unwrap().clone()
+}
+
+#[tauri::command]
+fn set_vocabulary(state: tauri::State<Arc<AppState>>, words: Vec<String>) {
+    *state.vocabulary.lock().unwrap() = words.clone();
+    let mut settings = load_settings();
+    settings.vocabulary = words;
+    save_settings(&settings);
+}
+
+#[tauri::command]
+fn get_replacements(state: tauri::State<Arc<AppState>>) -> Vec<ReplacementRule> {
+    state.replacements.lock().unwrap().clone()
+}
+
+#[tauri::command]
+fn set_replacements(state: tauri::State<Arc<AppState>>, rules: Vec<ReplacementRule>) {
+    *state.replacements.lock().unwrap() = rules.clone();
+    let mut settings = load_settings();
+    settings.replacements = rules;
+    save_settings(&settings);
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let state = Arc::new(AppState {
@@ -140,6 +210,8 @@ pub fn run() {
         transcriber: Mutex::new(None),
         ptt: Mutex::new(None),
         hotkey_combo: Mutex::new(String::new()),
+        vocabulary: Mutex::new(Vec::new()),
+        replacements: Mutex::new(Vec::new()),
     });
 
     tauri::Builder::default()
@@ -150,7 +222,11 @@ pub fn run() {
             get_current_model,
             switch_model,
             get_hotkey,
-            set_hotkey
+            set_hotkey,
+            get_vocabulary,
+            set_vocabulary,
+            get_replacements,
+            set_replacements
         ])
         .setup(move |app| {
             let status_item = MenuItem::with_id(app, "status", "Status: starting...", false, None::<&str>)?;
@@ -228,6 +304,8 @@ fn run_pipeline(app: tauri::AppHandle, state: Arc<AppState>) -> anyhow::Result<(
     *state.current_model.lock().unwrap() = model_id;
 
     let combo = settings.hotkey_combo.clone();
+    *state.vocabulary.lock().unwrap() = settings.vocabulary.clone();
+    *state.replacements.lock().unwrap() = settings.replacements.clone();
     let ptt = hotkeys::PushToTalk::new(&combo)?;
     *state.ptt.lock().unwrap() = Some(ptt);
     *state.hotkey_combo.lock().unwrap() = combo;
@@ -257,13 +335,16 @@ fn run_pipeline(app: tauri::AppHandle, state: Arc<AppState>) -> anyhow::Result<(
                     recording = false;
                     set_status(&app, "transcribing...");
                     let resampled = audio::resample_linear(&buffer, live.sample_rate, 16_000);
-                    let text_result = {
+                        let text_result = {
                         let guard = state.transcriber.lock().unwrap();
-                        guard.as_ref().map(|t| t.transcribe(&resampled))
+                        let prompt = state.vocabulary.lock().unwrap().join(", ");
+                        guard.as_ref().map(|t| t.transcribe_with_prompt(&resampled, &prompt))
                     };
                     if let Some(Ok(text)) = text_result {
                         if !text.is_empty() {
-                            injector.inject(&text).ok();
+                            let rules = state.replacements.lock().unwrap().clone();
+                            let final_text = apply_replacements(&text, &rules);
+                            injector.inject(&final_text).ok();
                         }
                     }
                     set_status(&app, "idle");
