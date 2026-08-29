@@ -195,6 +195,23 @@ saveRulesBtn.addEventListener("click", async () => {
   await invoke("set_replacements", { rules });
 });
 
+const warningBanner = document.querySelector<HTMLDivElement>("#warning-banner")!;
+const warningText = document.querySelector<HTMLSpanElement>("#warning-text")!;
+const dismissWarningBtn = document.querySelector<HTMLButtonElement>("#dismiss-warning")!;
+
+function showWarning(message: string) {
+  warningText.textContent = message;
+  warningBanner.classList.remove("hidden");
+}
+
+dismissWarningBtn.addEventListener("click", () => {
+  warningBanner.classList.add("hidden");
+});
+
+listen<string>("pipeline-warning", (event) => {
+  showWarning(event.payload);
+});
+
 loadVocabulary();
 loadReplacements();
 loadHotkey();

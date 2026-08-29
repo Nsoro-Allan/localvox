@@ -4,9 +4,17 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-whisper-rs = { version = "0.14", features = ["openblas"] }
 hound = "3.5"
 anyhow = "1"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+whisper-rs = { version = "0.14", features = ["openblas"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+whisper-rs = { version = "0.14", features = ["metal"] }
+
+[target.'cfg(target_os = "windows")'.dependencies]
+whisper-rs = { version = "0.14", features = ["vulkan"] }
 
 [dev-dependencies]
 audio = { path = "../audio" }

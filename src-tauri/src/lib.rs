@@ -265,8 +265,9 @@ pub fn run() {
             let handle = app.handle().clone();
             let pipeline_state = state.clone();
             thread::spawn(move || {
-                if let Err(e) = run_pipeline(handle, pipeline_state) {
+                if let Err(e) = run_pipeline(handle.clone(), pipeline_state) {
                     eprintln!("pipeline error: {e:?}");
+                    handle.emit("pipeline-warning", format!("Localvox failed to start: {e}")).ok();
                 }
             });
 
@@ -335,17 +336,23 @@ fn run_pipeline(app: tauri::AppHandle, state: Arc<AppState>) -> anyhow::Result<(
                     recording = false;
                     set_status(&app, "transcribing...");
                     let resampled = audio::resample_linear(&buffer, live.sample_rate, 16_000);
-                        let text_result = {
+                    let text_result = {
                         let guard = state.transcriber.lock().unwrap();
                         let prompt = state.vocabulary.lock().unwrap().join(", ");
                         guard.as_ref().map(|t| t.transcribe_with_prompt(&resampled, &prompt))
                     };
-                    if let Some(Ok(text)) = text_result {
-                        if !text.is_empty() {
+                    match text_result {
+                        Some(Ok(text)) if !text.is_empty() => {
                             let rules = state.replacements.lock().unwrap().clone();
                             let final_text = apply_replacements(&text, &rules);
-                            injector.inject(&final_text).ok();
+                            if let Err(e) = injector.inject(&final_text) {
+                                app.emit("pipeline-warning", format!("Couldn't type the text: {e}")).ok();
+                            }
                         }
+                        Some(Err(e)) => {
+                            app.emit("pipeline-warning", format!("Transcription failed: {e}")).ok();
+                        }
+                        _ => {}
                     }
                     set_status(&app, "idle");
                 }

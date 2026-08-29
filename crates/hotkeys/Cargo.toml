@@ -4,5 +4,10 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-hotkey-listener = "0.3"
 anyhow = "1"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+hotkey-listener = "0.3"
+
+[target.'cfg(not(target_os = "linux"))'.dependencies]
+global-hotkey = "0.7"
