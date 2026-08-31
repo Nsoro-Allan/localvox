@@ -82,7 +82,7 @@ listen<string>("model-switch-progress", (event) => {
 
 listen<string>("pipeline-status", (event) => {
   const payload = event.payload;
-  let state = "idle";
+  let state = "Running";
   if (payload.includes("listening")) state = "listening";
   else if (payload.includes("transcribing")) state = "transcribing";
   setStatus(state, payload);
@@ -212,6 +212,33 @@ listen<string>("pipeline-warning", (event) => {
   showWarning(event.payload);
 });
 
+const cleanupToggle = document.querySelector<HTMLInputElement>("#cleanup-toggle")!;
+const cleanupProgress = document.querySelector<HTMLParagraphElement>("#cleanup-progress")!;
+
+async function loadCleanupSetting() {
+  cleanupToggle.checked = await invoke<boolean>("get_cleanup_enabled");
+}
+
+cleanupToggle.addEventListener("change", async () => {
+  const enabled = cleanupToggle.checked;
+  cleanupToggle.disabled = true;
+  cleanupProgress.textContent = enabled ? "Enabling…" : "";
+  try {
+    await invoke("set_cleanup_enabled", { enabled });
+    cleanupProgress.textContent = enabled ? "Enabled" : "Disabled";
+  } catch (e) {
+    cleanupProgress.textContent = `Failed: ${e}`;
+    cleanupToggle.checked = !enabled;
+  } finally {
+    cleanupToggle.disabled = false;
+  }
+});
+
+listen<string>("cleanup-progress", (event) => {
+  cleanupProgress.textContent = event.payload;
+});
+
+loadCleanupSetting();
 loadVocabulary();
 loadReplacements();
 loadHotkey();

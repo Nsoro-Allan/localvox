@@ -90,7 +90,7 @@ Splitting the Rust logic into its own crates (outside `src-tauri`) means the aud
 
 ### Phase 6 — Tauri GUI shell
 - Onboarding wizard: hardware scan → recommended tier shown → model download progress → ready screen.
-- System tray icon with idle/listening/transcribing states.
+- System tray icon with Running/listening/transcribing states.
 - Settings window: hotkey rebinding, model switching, input device picker, custom vocabulary list.
 - Recording HUD: small always-on-top indicator shown while dictating.
 
@@ -232,7 +232,7 @@ This pipeline gives you, from a single `git tag` push: a signed `.dmg` for macOS
 - [ ] macOS: permission prompts appear correctly on first run; app is not blocked by Gatekeeper
 - [ ] Windows: installer does not trigger a SmartScreen warning
 - [ ] Model switch in settings takes effect without a restart
-- [ ] App idles at low CPU/RAM when not actively transcribing
+- [ ] App Runs at low CPU/RAM when not actively transcribing
 
 ---
 

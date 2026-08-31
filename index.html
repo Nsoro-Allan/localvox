@@ -67,6 +67,16 @@
       </div>
     </section>
 
+    <section class="panel">
+      <h2>Self-correction cleanup</h2>
+      <p class="hint">Uses a small local AI model to remove false starts, like turning "go to school, sorry, the market" into "go to the market". Downloads ~1.1GB on first enable, and adds some processing time to each dictation.</p>
+      <label class="toggle-row">
+        <input type="checkbox" id="cleanup-toggle" />
+        Enable cleanup
+      </label>
+      <p id="cleanup-progress" class="progress"></p>
+    </section>
+
   </main>
   <script type="module" src="/src/main.ts"></script>
 </body>

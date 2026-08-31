@@ -127,3 +127,5 @@ textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; 
 .warning-banner button {
   background: transparent; border: none; color: var(--warn); cursor: pointer; font-size: 14px; padding: 0 4px;
 }
+.toggle-row { display: flex; align-items: center; gap: 8px; font-family: var(--font-mono); font-size: 13px; color: var(--text-dim); cursor: pointer; }
+.toggle-row input[type="checkbox"] { accent-color: var(--accent); width: 14px; height: 14px; }

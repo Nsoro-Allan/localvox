@@ -1,0 +1,8 @@
+[package]
+name = "cleanup"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+llama_cpp = "0.3"
+anyhow = "1"

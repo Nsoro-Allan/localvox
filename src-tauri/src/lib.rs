@@ -17,6 +17,8 @@ struct AppState {
     hotkey_combo: Mutex<String>,
     vocabulary: Mutex<Vec<String>>,
     replacements: Mutex<Vec<ReplacementRule>>,
+    cleaner: Mutex<Option<cleanup::Cleaner>>,
+    cleanup_enabled: Mutex<bool>,
 }
 
 #[derive(Serialize, Clone)]
@@ -41,6 +43,7 @@ struct Settings {
     model_id: Option<String>,
     vocabulary: Vec<String>,
     replacements: Vec<ReplacementRule>,
+    cleanup_enabled: bool,
 }
 
 impl Default for Settings {
@@ -50,6 +53,7 @@ impl Default for Settings {
             model_id: None,
             vocabulary: Vec::new(),
             replacements: Vec::new(),
+            cleanup_enabled: false,
         }
     }
 }
@@ -142,21 +146,35 @@ fn get_current_model(state: tauri::State<Arc<AppState>>) -> String {
 }
 
 #[tauri::command]
-fn switch_model(app: tauri::AppHandle, state: tauri::State<Arc<AppState>>, model_id: String) -> Result<(), String> {
+async fn switch_model(app: tauri::AppHandle, state: tauri::State<'_, Arc<AppState>>, model_id: String) -> Result<(), String> {
     let entry = model_manager::find_model(&model_id).ok_or_else(|| "unknown model".to_string())?;
+
     app.emit("model-switch-progress", format!("Downloading {}...", entry.id)).ok();
-    let path = model_manager::download_model(entry).map_err(|e| e.to_string())?;
-    app.emit("model-switch-progress", "Loading model...".to_string()).ok();
-    let transcriber = asr::Transcriber::load(path.to_str().unwrap()).map_err(|e| e.to_string())?;
-    *state.transcriber.lock().unwrap() = Some(transcriber);
-    *state.current_model.lock().unwrap() = model_id.clone();
 
-    let mut settings = load_settings();
-    settings.model_id = Some(model_id);
-    save_settings(&settings);
+    let app_for_task = app.clone();
+    let result = tauri::async_runtime::spawn_blocking(move || -> anyhow::Result<asr::Transcriber> {
+        let path = model_manager::download_model(entry)?;
+        app_for_task.emit("model-switch-progress", "Loading model...".to_string()).ok();
+        let path_str = path.to_str().ok_or_else(|| anyhow::anyhow!("invalid model path"))?;
+        asr::Transcriber::load(path_str)
+    })
+    .await
+    .map_err(|e| format!("background task panicked: {e}"))?;
 
-    app.emit("model-switch-progress", "Ready".to_string()).ok();
-    Ok(())
+    match result {
+        Ok(transcriber) => {
+            *state.transcriber.lock().unwrap() = Some(transcriber);
+            *state.current_model.lock().unwrap() = model_id.clone();
+
+            let mut settings = load_settings();
+            settings.model_id = Some(model_id);
+            save_settings(&settings);
+
+            app.emit("model-switch-progress", "Ready".to_string()).ok();
+            Ok(())
+        }
+        Err(e) => Err(e.to_string()),
+    }
 }
 
 #[tauri::command]
@@ -203,6 +221,44 @@ fn set_replacements(state: tauri::State<Arc<AppState>>, rules: Vec<ReplacementRu
     save_settings(&settings);
 }
 
+#[tauri::command]
+fn get_cleanup_enabled(state: tauri::State<Arc<AppState>>) -> bool {
+    *state.cleanup_enabled.lock().unwrap()
+}
+
+#[tauri::command]
+async fn set_cleanup_enabled(app: tauri::AppHandle, state: tauri::State<'_, Arc<AppState>>, enabled: bool) -> Result<(), String> {
+    if enabled && state.cleaner.lock().unwrap().is_none() {
+        app.emit("cleanup-progress", "Downloading cleanup model (~1.1GB)...".to_string()).ok();
+        let app_for_task = app.clone();
+        let result = tauri::async_runtime::spawn_blocking(move || -> anyhow::Result<cleanup::Cleaner> {
+            let path = model_manager::download_cleanup_model()?;
+            app_for_task.emit("cleanup-progress", "Loading cleanup model...".to_string()).ok();
+            let path_str = path.to_str().ok_or_else(|| anyhow::anyhow!("invalid model path"))?;
+            cleanup::Cleaner::load(path_str)
+        })
+        .await
+        .map_err(|e| format!("background task panicked: {e}"))?;
+
+        match result {
+            Ok(cleaner) => {
+                *state.cleaner.lock().unwrap() = Some(cleaner);
+                app.emit("cleanup-progress", "Ready".to_string()).ok();
+            }
+            Err(e) => {
+                app.emit("cleanup-progress", format!("Failed: {e}")).ok();
+                return Err(e.to_string());
+            }
+        }
+    }
+
+    *state.cleanup_enabled.lock().unwrap() = enabled;
+    let mut settings = load_settings();
+    settings.cleanup_enabled = enabled;
+    save_settings(&settings);
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let state = Arc::new(AppState {
@@ -212,6 +268,8 @@ pub fn run() {
         hotkey_combo: Mutex::new(String::new()),
         vocabulary: Mutex::new(Vec::new()),
         replacements: Mutex::new(Vec::new()),
+        cleaner: Mutex::new(None),
+        cleanup_enabled: Mutex::new(false),
     });
 
     tauri::Builder::default()
@@ -226,7 +284,9 @@ pub fn run() {
             get_vocabulary,
             set_vocabulary,
             get_replacements,
-            set_replacements
+            set_replacements,
+            get_cleanup_enabled,
+            set_cleanup_enabled
         ])
         .setup(move |app| {
             let status_item = MenuItem::with_id(app, "status", "Status: starting...", false, None::<&str>)?;
@@ -307,17 +367,29 @@ fn run_pipeline(app: tauri::AppHandle, state: Arc<AppState>) -> anyhow::Result<(
     let combo = settings.hotkey_combo.clone();
     *state.vocabulary.lock().unwrap() = settings.vocabulary.clone();
     *state.replacements.lock().unwrap() = settings.replacements.clone();
+    *state.cleanup_enabled.lock().unwrap() = settings.cleanup_enabled;
+    if settings.cleanup_enabled {
+        set_status(&app, "loading cleanup model...");
+        if let Ok(path) = model_manager::download_cleanup_model() {
+            if let Some(path_str) = path.to_str() {
+                if let Ok(cleaner) = cleanup::Cleaner::load(path_str) {
+                    *state.cleaner.lock().unwrap() = Some(cleaner);
+                }
+            }
+        }
+    }
     let ptt = hotkeys::PushToTalk::new(&combo)?;
     *state.ptt.lock().unwrap() = Some(ptt);
     *state.hotkey_combo.lock().unwrap() = combo;
 
     let mut injector = injector::Injector::new()?;
-    let live = audio::start_stream()?;
+    let mut live = audio::start_stream()?;
 
-    set_status(&app, "idle");
+    set_status(&app, "Running");
 
     let mut buffer: Vec<f32> = Vec::new();
     let mut recording = false;
+    let mut last_chunk_at = std::time::Instant::now();
 
     loop {
         let event = {
@@ -343,8 +415,18 @@ fn run_pipeline(app: tauri::AppHandle, state: Arc<AppState>) -> anyhow::Result<(
                     };
                     match text_result {
                         Some(Ok(text)) if !text.is_empty() => {
+                            let cleaned = if *state.cleanup_enabled.lock().unwrap() {
+                                let guard = state.cleaner.lock().unwrap();
+                                match guard.as_ref() {
+                                    Some(cleaner) => cleaner.clean(&text).unwrap_or_else(|_| text.clone()),
+                                    None => text.clone(),
+                                }
+                            } else {
+                                text.clone()
+                            };
                             let rules = state.replacements.lock().unwrap().clone();
-                            let final_text = apply_replacements(&text, &rules);
+                            let corrected = fix_digit_sequences(&cleaned);
+                            let final_text = apply_replacements(&corrected, &rules);
                             if let Err(e) = injector.inject(&final_text) {
                                 app.emit("pipeline-warning", format!("Couldn't type the text: {e}")).ok();
                             }
@@ -354,22 +436,42 @@ fn run_pipeline(app: tauri::AppHandle, state: Arc<AppState>) -> anyhow::Result<(
                         }
                         _ => {}
                     }
-                    set_status(&app, "idle");
                 }
             }
         }
 
         match live.rx.recv_timeout(Duration::from_millis(50)) {
             Ok(chunk) => {
+                last_chunk_at = std::time::Instant::now();
                 if recording {
                     let mono = audio::downmix(&chunk, live.channels);
                     buffer.extend_from_slice(&mono);
                 }
             }
-            Err(RecvTimeoutError::Timeout) => continue,
-            Err(RecvTimeoutError::Disconnected) => break,
+            Err(RecvTimeoutError::Timeout) => {
+                if last_chunk_at.elapsed() > Duration::from_secs(5) {
+                    reconnect_audio(&app, &mut live);
+                    last_chunk_at = std::time::Instant::now();
+                }
+            }
+            Err(RecvTimeoutError::Disconnected) => {
+                reconnect_audio(&app, &mut live);
+                last_chunk_at = std::time::Instant::now();
+            }
         }
     }
+}
 
-    Ok(())
+fn reconnect_audio(app: &tauri::AppHandle, live: &mut audio::LiveStream) {
+    app.emit("pipeline-warning", "Audio input lost — reconnecting...".to_string()).ok();
+    set_status(app, "reconnecting audio...");
+    loop {
+        thread::sleep(Duration::from_secs(2));
+        if let Ok(new_stream) = audio::start_stream() {
+            *live = new_stream;
+            set_status(app, "Running");
+            app.emit("pipeline-warning", "Audio input reconnected.".to_string()).ok();
+            return;
+        }
+    }
 }
