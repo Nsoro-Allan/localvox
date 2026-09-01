@@ -2,11 +2,8 @@ use anyhow::{anyhow, Result};
 use llama_cpp::standard_sampler::StandardSampler;
 use llama_cpp::{LlamaModel, LlamaParams, SessionParams};
 
-const SYSTEM_PROMPT: &str = "You are a transcription cleanup assistant. The user gives you a raw dictated transcript that may contain false starts and self-corrections, like saying \"go to school, sorry, to the market\" when they meant \"go to the market\". Rewrite it as clean, natural text reflecting only what the speaker meant to say. Keep their wording and tone otherwise unchanged. Do not add commentary, explanations, or quotation marks - output only the corrected text and nothing else.";
+const SYSTEM_PROMPT: &str = "Clean up this dictated transcript by removing false starts and self-corrections (e.g. \"go to school, sorry, the market\" -> \"go to the market\"). Keep the rest unchanged. Output only the corrected text, nothing else.";
 
-/// A loaded local LLM used to clean up disfluencies and self-corrections
-/// in dictated text. Loading is the expensive part; `.clean()` on an
-/// existing instance is comparatively cheap.
 pub struct Cleaner {
     model: LlamaModel,
 }
@@ -23,9 +20,17 @@ impl Cleaner {
             return Ok(String::new());
         }
 
+        // The model's own default context window can be tens of thousands
+        // of tokens even though we only ever feed it a short prompt plus
+        // one dictated utterance — right-sizing this avoids allocating a
+        // KV cache far bigger than needed on every single call.
+        let session_params = SessionParams {
+            n_ctx: 1024,
+            ..Default::default()
+        };
         let mut session = self
             .model
-            .create_session(SessionParams::default())
+            .create_session(session_params)
             .map_err(|e| anyhow!("failed to create session: {e:?}"))?;
 
         let prompt = format!(
@@ -36,7 +41,12 @@ impl Cleaner {
             .advance_context(&prompt)
             .map_err(|e| anyhow!("failed to feed prompt: {e:?}"))?;
 
-        let max_tokens = 256;
+        // A cleaned utterance is never dramatically longer than the raw
+        // one, so bound generation length proportionally to the input
+        // instead of always paying for a flat 256-token ceiling.
+        let word_count = raw_text.split_whitespace().count();
+        let max_tokens = (word_count * 3 + 32).min(256);
+
         let completions = session
             .start_completing_with(StandardSampler::default(), max_tokens)
             .map_err(|e| anyhow!("failed to start completion: {e:?}"))?
@@ -53,7 +63,6 @@ impl Cleaner {
 
         let cleaned = output.trim().to_string();
         if cleaned.is_empty() {
-            // Fall back to the original rather than returning nothing.
             Ok(raw_text.to_string())
         } else {
             Ok(cleaned)

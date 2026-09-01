@@ -4,5 +4,5 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-llama_cpp = "0.3"
+llama_cpp = { version = "0.3", features = ["blas"] }
 anyhow = "1"

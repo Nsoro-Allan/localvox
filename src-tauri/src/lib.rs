@@ -114,6 +114,20 @@ fn replace_case_insensitive(text: &str, find: &str, replace: &str) -> String {
     result
 }
 
+fn fix_digit_sequences(text: &str) -> String {
+    let re = regex::Regex::new(r"\d+(?:,\s*\d+)+").unwrap();
+    re.replace_all(text, |caps: &regex::Captures| {
+        let matched = &caps[0];
+        let digits_only: String = matched.chars().filter(|c| c.is_ascii_digit()).collect();
+        if digits_only.len() >= 7 {
+            digits_only
+        } else {
+            matched.to_string()
+        }
+    })
+    .to_string()
+}
+
 #[tauri::command]
 fn get_hardware_info() -> HardwareInfo {
     let profile = hardware::detect();

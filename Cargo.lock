@@ -2731,6 +2731,7 @@ dependencies = [
  "hotkeys",
  "injector",
  "model-manager",
+ "regex",
  "serde",
  "serde_json",
  "tauri",
