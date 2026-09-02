@@ -322,6 +322,27 @@ pub fn run() {
                     _ => {}
                 })
                 .build(app)?;
+            
+            let hud_window = tauri::WebviewWindowBuilder::new(app, "hud", tauri::WebviewUrl::App("hud.html".into()))
+                .decorations(false)
+                .transparent(true)
+                .always_on_top(true)
+                .skip_taskbar(true)
+                .resizable(false)
+                .shadow(false)
+                .inner_size(120.0, 44.0)
+                .visible(false)
+                .build()?;
+
+            if let Ok(Some(monitor)) = hud_window.primary_monitor() {
+                let size = monitor.size();
+                let scale = monitor.scale_factor();
+                let win_w = 120.0;
+                let win_h = 44.0;
+                let x = (size.width as f64 / scale - win_w) / 2.0;
+                let y = size.height as f64 / scale - win_h - 40.0;
+                hud_window.set_position(tauri::Position::Logical(tauri::LogicalPosition::new(x, y))).ok();
+            }
 
             app.manage(StatusItem(status_item));
 
@@ -356,6 +377,14 @@ fn set_status(app: &tauri::AppHandle, text: &str) {
         status.0.set_text(format!("Status: {text}")).ok();
     }
     app.emit("pipeline-status", text.to_string()).ok();
+
+    if let Some(hud) = app.get_webview_window("hud") {
+        if text.contains("listening") || text.contains("transcribing") {
+            hud.show().ok();
+        } else {
+            hud.hide().ok();
+        }
+    }
 }
 
 fn run_pipeline(app: tauri::AppHandle, state: Arc<AppState>) -> anyhow::Result<()> {
@@ -427,7 +456,8 @@ fn run_pipeline(app: tauri::AppHandle, state: Arc<AppState>) -> anyhow::Result<(
                         let prompt = state.vocabulary.lock().unwrap().join(", ");
                         guard.as_ref().map(|t| t.transcribe_with_prompt(&resampled, &prompt))
                     };
-                    match text_result {
+
+                    let final_text = match text_result {
                         Some(Ok(text)) if !text.is_empty() => {
                             let cleaned = if *state.cleanup_enabled.lock().unwrap() {
                                 let guard = state.cleaner.lock().unwrap();
@@ -440,15 +470,21 @@ fn run_pipeline(app: tauri::AppHandle, state: Arc<AppState>) -> anyhow::Result<(
                             };
                             let rules = state.replacements.lock().unwrap().clone();
                             let corrected = fix_digit_sequences(&cleaned);
-                            let final_text = apply_replacements(&corrected, &rules);
-                            if let Err(e) = injector.inject(&final_text) {
-                                app.emit("pipeline-warning", format!("Couldn't type the text: {e}")).ok();
-                            }
+                            Some(apply_replacements(&corrected, &rules))
                         }
                         Some(Err(e)) => {
                             app.emit("pipeline-warning", format!("Transcription failed: {e}")).ok();
+                            None
                         }
-                        _ => {}
+                        _ => None,
+                    };
+
+                    set_status(&app, "idle");
+
+                    if let Some(text) = final_text {
+                        if let Err(e) = injector.inject(&text) {
+                            app.emit("pipeline-warning", format!("Couldn't type the text: {e}")).ok();
+                        }
                     }
                 }
             }
