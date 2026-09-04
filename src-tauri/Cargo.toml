@@ -31,5 +31,4 @@ hardware = { path = "../crates/hardware" }
 model-manager = { path = "../crates/model-manager" }
 hotkeys = { path = "../crates/hotkeys" }
 injector = { path = "../crates/injector" }
-cleanup = { path = "../crates/cleanup" }
 anyhow = "1"

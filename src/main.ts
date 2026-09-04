@@ -212,33 +212,6 @@ listen<string>("pipeline-warning", (event) => {
   showWarning(event.payload);
 });
 
-const cleanupToggle = document.querySelector<HTMLInputElement>("#cleanup-toggle")!;
-const cleanupProgress = document.querySelector<HTMLParagraphElement>("#cleanup-progress")!;
-
-async function loadCleanupSetting() {
-  cleanupToggle.checked = await invoke<boolean>("get_cleanup_enabled");
-}
-
-cleanupToggle.addEventListener("change", async () => {
-  const enabled = cleanupToggle.checked;
-  cleanupToggle.disabled = true;
-  cleanupProgress.textContent = enabled ? "Enabling…" : "";
-  try {
-    await invoke("set_cleanup_enabled", { enabled });
-    cleanupProgress.textContent = enabled ? "Enabled" : "Disabled";
-  } catch (e) {
-    cleanupProgress.textContent = `Failed: ${e}`;
-    cleanupToggle.checked = !enabled;
-  } finally {
-    cleanupToggle.disabled = false;
-  }
-});
-
-listen<string>("cleanup-progress", (event) => {
-  cleanupProgress.textContent = event.payload;
-});
-
-loadCleanupSetting();
 loadVocabulary();
 loadReplacements();
 loadHotkey();

@@ -95,29 +95,3 @@ mod tests {
         assert!(find_model("does-not-exist").is_none());
     }
 }
-
-pub struct CleanupModelEntry {
-    pub repo: &'static str,
-    pub file: &'static str,
-    pub size_mb: u64,
-}
-
-pub const CLEANUP_MODEL: CleanupModelEntry = CleanupModelEntry {
-    repo: "Qwen/Qwen2.5-1.5B-Instruct-GGUF",
-    file: "qwen2.5-1.5b-instruct-q4_k_m.gguf",
-    size_mb: 1100,
-};
-
-pub fn download_cleanup_model() -> Result<PathBuf> {
-    let dest_dir = models_dir()?;
-    let dest_path = dest_dir.join(CLEANUP_MODEL.file);
-    if !dest_path.exists() {
-        let api = hf_hub::api::sync::Api::new()?;
-        let repo = api.model(CLEANUP_MODEL.repo.to_string());
-        let cached_path = repo
-            .get(CLEANUP_MODEL.file)
-            .with_context(|| format!("downloading {}", CLEANUP_MODEL.file))?;
-        fs::copy(&cached_path, &dest_path)?;
-    }
-    Ok(dest_path)
-}

@@ -17,8 +17,6 @@ struct AppState {
     hotkey_combo: Mutex<String>,
     vocabulary: Mutex<Vec<String>>,
     replacements: Mutex<Vec<ReplacementRule>>,
-    cleaner: Mutex<Option<cleanup::Cleaner>>,
-    cleanup_enabled: Mutex<bool>,
 }
 
 #[derive(Serialize, Clone)]
@@ -43,7 +41,6 @@ struct Settings {
     model_id: Option<String>,
     vocabulary: Vec<String>,
     replacements: Vec<ReplacementRule>,
-    cleanup_enabled: bool,
 }
 
 impl Default for Settings {
@@ -53,7 +50,6 @@ impl Default for Settings {
             model_id: None,
             vocabulary: Vec::new(),
             replacements: Vec::new(),
-            cleanup_enabled: false,
         }
     }
 }
@@ -235,44 +231,6 @@ fn set_replacements(state: tauri::State<Arc<AppState>>, rules: Vec<ReplacementRu
     save_settings(&settings);
 }
 
-#[tauri::command]
-fn get_cleanup_enabled(state: tauri::State<Arc<AppState>>) -> bool {
-    *state.cleanup_enabled.lock().unwrap()
-}
-
-#[tauri::command]
-async fn set_cleanup_enabled(app: tauri::AppHandle, state: tauri::State<'_, Arc<AppState>>, enabled: bool) -> Result<(), String> {
-    if enabled && state.cleaner.lock().unwrap().is_none() {
-        app.emit("cleanup-progress", "Downloading cleanup model (~1.1GB)...".to_string()).ok();
-        let app_for_task = app.clone();
-        let result = tauri::async_runtime::spawn_blocking(move || -> anyhow::Result<cleanup::Cleaner> {
-            let path = model_manager::download_cleanup_model()?;
-            app_for_task.emit("cleanup-progress", "Loading cleanup model...".to_string()).ok();
-            let path_str = path.to_str().ok_or_else(|| anyhow::anyhow!("invalid model path"))?;
-            cleanup::Cleaner::load(path_str)
-        })
-        .await
-        .map_err(|e| format!("background task panicked: {e}"))?;
-
-        match result {
-            Ok(cleaner) => {
-                *state.cleaner.lock().unwrap() = Some(cleaner);
-                app.emit("cleanup-progress", "Ready".to_string()).ok();
-            }
-            Err(e) => {
-                app.emit("cleanup-progress", format!("Failed: {e}")).ok();
-                return Err(e.to_string());
-            }
-        }
-    }
-
-    *state.cleanup_enabled.lock().unwrap() = enabled;
-    let mut settings = load_settings();
-    settings.cleanup_enabled = enabled;
-    save_settings(&settings);
-    Ok(())
-}
-
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let state = Arc::new(AppState {
@@ -282,8 +240,6 @@ pub fn run() {
         hotkey_combo: Mutex::new(String::new()),
         vocabulary: Mutex::new(Vec::new()),
         replacements: Mutex::new(Vec::new()),
-        cleaner: Mutex::new(None),
-        cleanup_enabled: Mutex::new(false),
     });
 
     tauri::Builder::default()
@@ -298,9 +254,7 @@ pub fn run() {
             get_vocabulary,
             set_vocabulary,
             get_replacements,
-            set_replacements,
-            get_cleanup_enabled,
-            set_cleanup_enabled
+            set_replacements
         ])
         .setup(move |app| {
             let status_item = MenuItem::with_id(app, "status", "Status: starting...", false, None::<&str>)?;
@@ -322,7 +276,7 @@ pub fn run() {
                     _ => {}
                 })
                 .build(app)?;
-            
+
             let hud_window = tauri::WebviewWindowBuilder::new(app, "hud", tauri::WebviewUrl::App("hud.html".into()))
                 .decorations(false)
                 .transparent(true)
@@ -410,17 +364,6 @@ fn run_pipeline(app: tauri::AppHandle, state: Arc<AppState>) -> anyhow::Result<(
     let combo = settings.hotkey_combo.clone();
     *state.vocabulary.lock().unwrap() = settings.vocabulary.clone();
     *state.replacements.lock().unwrap() = settings.replacements.clone();
-    *state.cleanup_enabled.lock().unwrap() = settings.cleanup_enabled;
-    if settings.cleanup_enabled {
-        set_status(&app, "loading cleanup model...");
-        if let Ok(path) = model_manager::download_cleanup_model() {
-            if let Some(path_str) = path.to_str() {
-                if let Ok(cleaner) = cleanup::Cleaner::load(path_str) {
-                    *state.cleaner.lock().unwrap() = Some(cleaner);
-                }
-            }
-        }
-    }
     let ptt = hotkeys::PushToTalk::new(&combo)?;
     *state.ptt.lock().unwrap() = Some(ptt);
     *state.hotkey_combo.lock().unwrap() = combo;
@@ -459,17 +402,8 @@ fn run_pipeline(app: tauri::AppHandle, state: Arc<AppState>) -> anyhow::Result<(
 
                     let final_text = match text_result {
                         Some(Ok(text)) if !text.is_empty() => {
-                            let cleaned = if *state.cleanup_enabled.lock().unwrap() {
-                                let guard = state.cleaner.lock().unwrap();
-                                match guard.as_ref() {
-                                    Some(cleaner) => cleaner.clean(&text).unwrap_or_else(|_| text.clone()),
-                                    None => text.clone(),
-                                }
-                            } else {
-                                text.clone()
-                            };
                             let rules = state.replacements.lock().unwrap().clone();
-                            let corrected = fix_digit_sequences(&cleaned);
+                            let corrected = fix_digit_sequences(&text);
                             Some(apply_replacements(&corrected, &rules))
                         }
                         Some(Err(e)) => {
