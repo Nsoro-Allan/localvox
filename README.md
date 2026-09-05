@@ -1,6 +1,6 @@
-# Localvox
+# LocalVox
 
-Localvox is a local-first voice dictation application for the desktop. Hold a hotkey, speak, and the transcribed text is typed wherever the cursor is currently focused — in any application. All processing happens on-device. No audio or text is transmitted over a network at any point, and the application works fully offline once its speech model has been downloaded.
+LocalVox is a local-first voice dictation application for the desktop. Hold a hotkey, speak, and the transcribed text is typed wherever the cursor is currently focused — in any application. All processing happens on-device. No audio or text is transmitted over a network at any point, and the application works fully offline once its speech model has been downloaded.
 
 Built with **Rust** for audio capture, transcription, and system integration, and **Tauri** for the application shell and settings interface.
 
