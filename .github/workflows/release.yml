@@ -71,9 +71,16 @@ jobs:
       - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          MACOSX_DEPLOYMENT_TARGET: "10.15"
+          # MACOSX_DEPLOYMENT_TARGET: "10.15"
         with:
           tagName: ${{ steps.version.outputs.tag }}
           releaseName: 'Localvox ${{ steps.version.outputs.tag }}'
           releaseDraft: true
           prerelease: false
+
+      - name: Configure build environment (macOS)
+        if: matrix.platform == 'macos-latest'
+        run: |
+          echo "MACOSX_DEPLOYMENT_TARGET=10.15" >> "$GITHUB_ENV"
+          echo "CFLAGS=-mmacosx-version-min=10.15" >> "$GITHUB_ENV"
+          echo "CXXFLAGS=-mmacosx-version-min=10.15" >> "$GITHUB_ENV"    
