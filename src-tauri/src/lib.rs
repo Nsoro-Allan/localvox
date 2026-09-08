@@ -13,8 +13,8 @@ struct StatusItem(MenuItem<tauri::Wry>);
 struct AppState {
     current_model: Mutex<String>,
     transcriber: Mutex<Option<asr::Transcriber>>,
-    ptt: Mutex<Option<hotkeys::PushToTalk>>,
     hotkey_combo: Mutex<String>,
+    hotkey_rebind_tx: Mutex<Option<std::sync::mpsc::Sender<String>>>,
     vocabulary: Mutex<Vec<String>>,
     replacements: Mutex<Vec<ReplacementRule>>,
 }
@@ -194,9 +194,11 @@ fn get_hotkey(state: tauri::State<Arc<AppState>>) -> String {
 
 #[tauri::command]
 fn set_hotkey(state: tauri::State<Arc<AppState>>, combo: String) -> Result<(), String> {
-    let new_ptt = hotkeys::PushToTalk::new(&combo).map_err(|e| e.to_string())?;
-    *state.ptt.lock().unwrap() = Some(new_ptt);
-    *state.hotkey_combo.lock().unwrap() = combo.clone();
+    let tx_guard = state.hotkey_rebind_tx.lock().unwrap();
+    if let Some(tx) = tx_guard.as_ref() {
+        tx.send(combo.clone()).map_err(|e| e.to_string())?;
+    }
+    drop(tx_guard);
 
     let mut settings = load_settings();
     settings.hotkey_combo = combo;
@@ -236,8 +238,8 @@ pub fn run() {
     let state = Arc::new(AppState {
         current_model: Mutex::new(String::new()),
         transcriber: Mutex::new(None),
-        ptt: Mutex::new(None),
         hotkey_combo: Mutex::new(String::new()),
+        hotkey_rebind_tx: Mutex::new(None),
         vocabulary: Mutex::new(Vec::new()),
         replacements: Mutex::new(Vec::new()),
     });
@@ -361,11 +363,14 @@ fn run_pipeline(app: tauri::AppHandle, state: Arc<AppState>) -> anyhow::Result<(
     *state.transcriber.lock().unwrap() = Some(transcriber);
     *state.current_model.lock().unwrap() = model_id;
 
-    let combo = settings.hotkey_combo.clone();
     *state.vocabulary.lock().unwrap() = settings.vocabulary.clone();
     *state.replacements.lock().unwrap() = settings.replacements.clone();
-    let ptt = hotkeys::PushToTalk::new(&combo)?;
-    *state.ptt.lock().unwrap() = Some(ptt);
+
+    let (rebind_tx, rebind_rx) = std::sync::mpsc::channel::<String>();
+    *state.hotkey_rebind_tx.lock().unwrap() = Some(rebind_tx);
+
+    let combo = settings.hotkey_combo.clone();
+    let mut ptt = hotkeys::PushToTalk::new(&combo)?;
     *state.hotkey_combo.lock().unwrap() = combo;
 
     let mut injector = injector::Injector::new()?;
@@ -378,10 +383,19 @@ fn run_pipeline(app: tauri::AppHandle, state: Arc<AppState>) -> anyhow::Result<(
     let mut last_chunk_at = std::time::Instant::now();
 
     loop {
-        let event = {
-            let guard = state.ptt.lock().unwrap();
-            guard.as_ref().and_then(|p| p.try_recv())
-        };
+        if let Ok(new_combo) = rebind_rx.try_recv() {
+            match hotkeys::PushToTalk::new(&new_combo) {
+                Ok(new_ptt) => {
+                    ptt = new_ptt;
+                    *state.hotkey_combo.lock().unwrap() = new_combo;
+                }
+                Err(e) => {
+                    app.emit("pipeline-warning", format!("Failed to rebind hotkey: {e}")).ok();
+                }
+            }
+        }
+
+        let event = ptt.try_recv();
 
         if let Some(event) = event {
             match event {
