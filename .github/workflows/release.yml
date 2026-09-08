@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Version tag (e.g. v0.1.2)'
+        description: 'Version tag (e.g. v0.1.0)'
         required: true
 
 jobs:
@@ -43,6 +43,20 @@ jobs:
             libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev \
             libx11-dev libxi-dev libxtst-dev cmake clang libclang-dev \
             libasound2-dev pkg-config libopenblas-dev rpm
+
+      - name: Configure whisper-rs build environment (Linux)
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          STDBOOL_DIR=$(dirname $(find /usr/lib/gcc -name stdbool.h | head -1))
+          echo "BINDGEN_EXTRA_CLANG_ARGS=-I$STDBOOL_DIR" >> "$GITHUB_ENV"
+          echo "BLAS_INCLUDE_DIRS=/usr/include/x86_64-linux-gnu" >> "$GITHUB_ENV"
+
+      - name: Install Vulkan SDK (Windows)
+        if: matrix.platform == 'windows-latest'
+        uses: humbletim/install-vulkan-sdk@v1.2
+        with:
+          version: 1.4.309.0
+          cache: true
 
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
