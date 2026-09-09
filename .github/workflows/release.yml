@@ -68,14 +68,23 @@ jobs:
       - name: Install npm dependencies
         run: npm install
 
-      - name: Set macOS deployment target
+      - name: Set macOS C++ deployment target
         if: matrix.platform == 'macos-latest'
-        run: echo "MACOSX_DEPLOYMENT_TARGET=11.0" >> "$GITHUB_ENV"
+        run: |
+          echo "MACOSX_DEPLOYMENT_TARGET=10.15" >> "$GITHUB_ENV"
+          echo "CXXFLAGS=-mmacosx-version-min=10.15" >> "$GITHUB_ENV"
+          echo "CFLAGS=-mmacosx-version-min=10.15" >> "$GITHUB_ENV"
+          echo "CC=clang" >> "$GITHUB_ENV"
+          echo "CXX=clang++" >> "$GITHUB_ENV"
 
       - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          MACOSX_DEPLOYMENT_TARGET: ${{ matrix.platform == 'macos-latest' && '11.0' || '' }}
+          MACOSX_DEPLOYMENT_TARGET: ${{ matrix.platform == 'macos-latest' && '10.15' || '' }}
+          CXXFLAGS: ${{ matrix.platform == 'macos-latest' && '-mmacosx-version-min=10.15' || '' }}
+          CFLAGS: ${{ matrix.platform == 'macos-latest' && '-mmacosx-version-min=10.15' || '' }}
+          CC: ${{ matrix.platform == 'macos-latest' && 'clang' || '' }}
+          CXX: ${{ matrix.platform == 'macos-latest' && 'clang++' || '' }}
         with:
           tagName: ${{ steps.version.outputs.tag }}
           releaseName: 'Localvox ${{ steps.version.outputs.tag }}'

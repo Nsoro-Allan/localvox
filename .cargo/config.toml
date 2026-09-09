@@ -1,2 +1,13 @@
 [env]
 MACOSX_DEPLOYMENT_TARGET = "10.15"
+CXXFLAGS = "-mmacosx-version-min=10.15"
+CFLAGS = "-mmacosx-version-min=10.15"
+
+[build]
+rustflags = ["-C", "link-args=-mmacosx-version-min=10.15"]
+
+[target.x86_64-apple-darwin]
+rustflags = ["-C", "link-args=-mmacosx-version-min=10.15"]
+
+[target.aarch64-apple-darwin]
+rustflags = ["-C", "link-args=-mmacosx-version-min=10.15"]
