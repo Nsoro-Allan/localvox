@@ -68,17 +68,14 @@ jobs:
       - name: Install npm dependencies
         run: npm install
 
-      - name: Diagnose deployment target (macOS)
+      - name: Set macOS deployment target
         if: matrix.platform == 'macos-latest'
-        run: |
-          echo "Without env var:"
-          rustc --print deployment-target
-          echo "With env var:"
-          MACOSX_DEPLOYMENT_TARGET=10.15 rustc --print deployment-target        
+        run: echo "MACOSX_DEPLOYMENT_TARGET=11.0" >> "$GITHUB_ENV"
 
       - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          MACOSX_DEPLOYMENT_TARGET: ${{ matrix.platform == 'macos-latest' && '11.0' || '' }}
         with:
           tagName: ${{ steps.version.outputs.tag }}
           releaseName: 'Localvox ${{ steps.version.outputs.tag }}'
