@@ -212,8 +212,11 @@ listen<string>("pipeline-warning", (event) => {
   showWarning(event.payload);
 });
 
-loadVocabulary();
-loadReplacements();
-loadHotkey();
 loadHardware();
-loadModels();
+
+listen("settings-ready", () => {
+  loadModels();
+  loadHotkey();
+  loadVocabulary();
+  loadReplacements();
+});

@@ -372,6 +372,7 @@ fn run_pipeline(app: tauri::AppHandle, state: Arc<AppState>) -> anyhow::Result<(
     let combo = settings.hotkey_combo.clone();
     let mut ptt = hotkeys::PushToTalk::new(&combo)?;
     *state.hotkey_combo.lock().unwrap() = combo;
+    app.emit("settings-ready", ()).ok();
 
     let mut injector = injector::Injector::new()?;
     let mut live = audio::start_stream()?;
