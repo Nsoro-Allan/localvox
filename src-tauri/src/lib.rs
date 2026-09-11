@@ -428,7 +428,7 @@ fn run_pipeline(app: tauri::AppHandle, state: Arc<AppState>) -> anyhow::Result<(
                         _ => None,
                     };
 
-                    set_status(&app, "idle");
+                    set_status(&app, "Running");
 
                     if let Some(text) = final_text {
                         if let Err(e) = injector.inject(&text) {
