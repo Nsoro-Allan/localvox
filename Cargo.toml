@@ -1,5 +1,3 @@
 [workspace]
 resolver = "2"
 members = ["src-tauri", "crates/*"]
-[patch.crates-io]
-cc = "=1.0.83"
