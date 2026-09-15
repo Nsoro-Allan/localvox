@@ -1,6 +1,8 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 
+// ---------- Types ----------
+
 interface HardwareInfo {
   total_ram_gb: number;
   cpu_cores: number;
@@ -15,16 +17,32 @@ interface ModelInfo {
   downloaded: boolean;
 }
 
+interface ReplacementRule {
+  find: string;
+  replace: string;
+}
+
+// ---------- Status ----------
+
 const statusDot = document.querySelector<HTMLSpanElement>("#status-dot")!;
 const statusText = document.querySelector<HTMLSpanElement>("#status-text")!;
-const hardwareInfo = document.querySelector<HTMLDListElement>("#hardware-info")!;
-const modelList = document.querySelector<HTMLDivElement>("#model-list")!;
-const modelProgress = document.querySelector<HTMLParagraphElement>("#model-progress")!;
 
 function setStatus(state: string, label: string) {
   statusDot.className = `status-dot ${state}`;
   statusText.textContent = label;
 }
+
+listen<string>("pipeline-status", (event) => {
+  const payload = event.payload;
+  let state = "Running";
+  if (payload.includes("listening")) state = "listening";
+  else if (payload.includes("transcribing")) state = "transcribing";
+  setStatus(state, payload);
+});
+
+// ---------- Hardware ----------
+
+const hardwareInfo = document.querySelector<HTMLDListElement>("#hardware-info")!;
 
 async function loadHardware() {
   const info = await invoke<HardwareInfo>("get_hardware_info");
@@ -36,6 +54,11 @@ async function loadHardware() {
     <dt>Recommended tier</dt><dd>${info.tier}</dd>
   `;
 }
+
+// ---------- Models ----------
+
+const modelList = document.querySelector<HTMLDivElement>("#model-list")!;
+const modelProgress = document.querySelector<HTMLParagraphElement>("#model-progress")!;
 
 async function loadModels() {
   const [models, current] = await Promise.all([
@@ -80,13 +103,7 @@ listen<string>("model-switch-progress", (event) => {
   modelProgress.textContent = event.payload;
 });
 
-listen<string>("pipeline-status", (event) => {
-  const payload = event.payload;
-  let state = "Running";
-  if (payload.includes("listening")) state = "listening";
-  else if (payload.includes("transcribing")) state = "transcribing";
-  setStatus(state, payload);
-});
+// ---------- Hotkey ----------
 
 const modCtrl = document.querySelector<HTMLInputElement>("#mod-ctrl")!;
 const modAlt = document.querySelector<HTMLInputElement>("#mod-alt")!;
@@ -130,13 +147,10 @@ saveHotkeyBtn.addEventListener("click", async () => {
   }
 });
 
-interface ReplacementRule { find: string; replace: string; }
+// ---------- Vocabulary ----------
 
 const vocabInput = document.querySelector<HTMLTextAreaElement>("#vocab-input")!;
 const saveVocabBtn = document.querySelector<HTMLButtonElement>("#save-vocab")!;
-const replacementRows = document.querySelector<HTMLDivElement>("#replacement-rows")!;
-const addRuleBtn = document.querySelector<HTMLButtonElement>("#add-rule")!;
-const saveRulesBtn = document.querySelector<HTMLButtonElement>("#save-rules")!;
 
 async function loadVocabulary() {
   const words = await invoke<string[]>("get_vocabulary");
@@ -147,6 +161,12 @@ saveVocabBtn.addEventListener("click", async () => {
   const words = vocabInput.value.split("\n").map((w) => w.trim()).filter((w) => w.length > 0);
   await invoke("set_vocabulary", { words });
 });
+
+// ---------- Corrections ----------
+
+const replacementRows = document.querySelector<HTMLDivElement>("#replacement-rows")!;
+const addRuleBtn = document.querySelector<HTMLButtonElement>("#add-rule")!;
+const saveRulesBtn = document.querySelector<HTMLButtonElement>("#save-rules")!;
 
 function addRuleRow(find = "", replace = "") {
   const row = document.createElement("div");
@@ -195,6 +215,8 @@ saveRulesBtn.addEventListener("click", async () => {
   await invoke("set_replacements", { rules });
 });
 
+// ---------- Warnings ----------
+
 const warningBanner = document.querySelector<HTMLDivElement>("#warning-banner")!;
 const warningText = document.querySelector<HTMLSpanElement>("#warning-text")!;
 const dismissWarningBtn = document.querySelector<HTMLButtonElement>("#dismiss-warning")!;
@@ -212,11 +234,23 @@ listen<string>("pipeline-warning", (event) => {
   showWarning(event.payload);
 });
 
-loadHardware();
+// ---------- Startup ----------
 
-listen("settings-ready", () => {
+function loadPipelineDependentData() {
   loadModels();
   loadHotkey();
   loadVocabulary();
   loadReplacements();
-});
+}
+
+async function initialize() {
+  loadHardware(); 
+  await listen("settings-ready", loadPipelineDependentData);
+
+  const ready = await invoke<boolean>("is_ready");
+  if (ready) {
+    loadPipelineDependentData();
+  }
+}
+
+initialize();

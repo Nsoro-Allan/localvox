@@ -17,6 +17,7 @@ struct AppState {
     hotkey_rebind_tx: Mutex<Option<std::sync::mpsc::Sender<String>>>,
     vocabulary: Mutex<Vec<String>>,
     replacements: Mutex<Vec<ReplacementRule>>,
+    ready: Mutex<bool>,
 }
 
 #[derive(Serialize, Clone)]
@@ -59,7 +60,6 @@ struct ReplacementRule {
     find: String,
     replace: String,
 }
-
 
 fn settings_path() -> Option<std::path::PathBuf> {
     let dir = dirs::data_dir()?.join("localvox");
@@ -233,6 +233,11 @@ fn set_replacements(state: tauri::State<Arc<AppState>>, rules: Vec<ReplacementRu
     save_settings(&settings);
 }
 
+#[tauri::command]
+fn is_ready(state: tauri::State<Arc<AppState>>) -> bool {
+    *state.ready.lock().unwrap()
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let state = Arc::new(AppState {
@@ -242,6 +247,7 @@ pub fn run() {
         hotkey_rebind_tx: Mutex::new(None),
         vocabulary: Mutex::new(Vec::new()),
         replacements: Mutex::new(Vec::new()),
+        ready: Mutex::new(false),
     });
 
     tauri::Builder::default()
@@ -256,7 +262,8 @@ pub fn run() {
             get_vocabulary,
             set_vocabulary,
             get_replacements,
-            set_replacements
+            set_replacements,
+            is_ready
         ])
         .setup(move |app| {
             let status_item = MenuItem::with_id(app, "status", "Status: starting...", false, None::<&str>)?;
@@ -372,6 +379,7 @@ fn run_pipeline(app: tauri::AppHandle, state: Arc<AppState>) -> anyhow::Result<(
     let combo = settings.hotkey_combo.clone();
     let mut ptt = hotkeys::PushToTalk::new(&combo)?;
     *state.hotkey_combo.lock().unwrap() = combo;
+    *state.ready.lock().unwrap() = true;
     app.emit("settings-ready", ()).ok();
 
     let mut injector = injector::Injector::new()?;
