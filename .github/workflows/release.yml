@@ -61,6 +61,13 @@ jobs:
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Configure macOS build environment
+        if: matrix.platform == 'macos-latest'
+        shell: bash
+        run: |
+          echo "MACOSX_DEPLOYMENT_TARGET=10.15" >> "$GITHUB_ENV"
+          echo "CMAKE_OSX_DEPLOYMENT_TARGET=10.15" >> "$GITHUB_ENV"
+
       - uses: actions/setup-node@v4
         with:
           node-version: lts/*
