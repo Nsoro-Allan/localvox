@@ -1,68 +1,88 @@
 # LocalVox
 
-LocalVox is a local-first voice dictation application for the desktop. Hold a hotkey, speak, and the transcribed text is typed wherever the cursor is currently focused — in any application. All processing happens on-device. No audio or text is transmitted over a network at any point, and the application works fully offline once its speech model has been downloaded.
+**Type at the speed you speak — fully local, offline-capable voice dictation for the desktop.**
 
-Built with **Rust** for audio capture, transcription, and system integration, and **Tauri** for the application shell and settings interface.
+LocalVox is a local-first voice dictation application. Hold a global hotkey, speak, and the transcribed text is typed into whatever application currently has focus. All audio capture, speech recognition, and text injection happen on-device. No audio or text is ever sent over the network. Once the speech model is downloaded, the app works completely offline.
+
+Built with **Rust** (audio, transcription, system integration) and **Tauri 2** (application shell + settings UI).
+
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Rust](https://img.shields.io/badge/Rust-1.70%2B-orange)](https://www.rust-lang.org)
+[![Tauri](https://img.shields.io/badge/Tauri-2-purple)](https://tauri.app)
 
 ---
 
 ## Features
 
-- **Push-to-talk dictation.** Hold a global hotkey (default `Ctrl+F9`), speak, and release. The transcribed text is typed into whatever application currently has focus.
-- **Fully local transcription**, powered by [whisper.cpp](https://github.com/ggerganov/whisper.cpp). No cloud services, no API keys, no internet connection required after setup.
-- **Hardware-aware model selection.** On first launch, Localvox evaluates the system's CPU, RAM, and GPU, then downloads and uses a speech model sized appropriately for the available hardware.
-- **Live model switching.** Models can be changed at any time from Settings; the new model downloads and loads without restarting the application.
-- **Configurable hotkey**, changeable from Settings and applied immediately.
-- **Custom vocabulary**, to improve recognition of names, acronyms, or domain-specific terms.
-- **Custom text corrections**, applied as exact find-and-replace rules after transcription.
-- **Automatic digit-sequence correction**, addressing a common transcription artifact where spoken number sequences (such as phone numbers) are rendered with incorrect punctuation.
-- **Recording indicator.** A small on-screen indicator confirms that Localvox is listening or transcribing, and disappears automatically once complete.
-- **System tray integration**, with live status and quick access to Settings.
-- **Automatic audio recovery**, detecting and reconnecting to the microphone if it is disconnected or changed.
-- **Visible error reporting.** Failures are surfaced as an in-app notification rather than failing silently.
-- **Persistent settings.** Model selection, hotkey configuration, vocabulary, and corrections all persist across restarts.
+- **Push-to-talk dictation** — Hold a global hotkey (default `Ctrl+F9`), speak, release. Text is injected into the focused application.
+- **Fully local transcription** — Powered by [whisper.cpp](https://github.com/ggerganov/whisper.cpp) via `whisper-rs`. No cloud services, no API keys, no internet after initial model download.
+- **Hardware-aware model selection** — On first launch the app inspects CPU, RAM and GPU, then downloads and uses a Whisper model sized for the available hardware.
+- **Live model switching** — Change models from Settings; the new model downloads and loads without restarting the app.
+- **Configurable hotkey** — Change it in Settings; the new combination is applied immediately.
+- **Custom vocabulary** — Improve recognition of names, acronyms and domain-specific terms.
+- **Custom text corrections** — Exact find-and-replace rules applied after transcription.
+- **Automatic digit-sequence correction** — Fixes common Whisper artifacts on spoken number sequences (phone numbers, etc.).
+- **Recording indicator** — Lightweight on-screen HUD that shows listening / transcribing state.
+- **System tray integration** — Live status + quick access to Settings.
+- **Automatic audio recovery** — Detects microphone disconnects/changes and reconnects.
+- **Visible error reporting** — Failures surface as in-app notifications instead of failing silently.
+- **Persistent settings** — Model choice, hotkey, vocabulary and corrections survive restarts.
 
 ---
 
 ## Architecture
 
-Localvox is organized as a Cargo workspace. Core functionality is implemented as a set of independent crates, separate from the application shell:
+LocalVox is a Cargo workspace. Core logic lives in independent crates; the Tauri shell only wires them together and provides the UI/tray/HUD.
 
 ```
 localvox/
-├── Cargo.toml                   # workspace root
+├── Cargo.toml                     # workspace root
 ├── crates/
-│   ├── audio/                   # microphone capture, resampling, voice-activity segmentation
-│   ├── asr/                     # speech-to-text engine (whisper.cpp bindings)
-│   ├── hardware/                 # CPU/RAM/GPU detection and model-tier recommendation
-│   ├── model-manager/             # model manifest, download, and checksum verification
-│   ├── hotkeys/                 # global push-to-talk hotkey listener
-│   └── injector/                 # text injection into the focused application
-├── src-tauri/                    # application shell: tray icon, recording indicator, settings backend
-│   └── src/lib.rs
-├── src/                           # settings interface (frontend)
+│   ├── audio/                     # microphone capture, resampling, VAD segmentation
+│   ├── asr/                       # speech-to-text (whisper-rs / whisper.cpp)
+│   ├── hardware/                  # CPU / RAM / GPU detection + model-tier recommendation
+│   ├── model-manager/             # model catalog, download (hf-hub), checksum verification
+│   ├── hotkeys/                   # global push-to-talk hotkey listener
+│   └── injector/                  # text injection into the focused application
+├── src-tauri/                     # Tauri application shell
+│   └── src/lib.rs                 # tray, HUD, settings backend, pipeline orchestration
+├── src/                           # settings frontend (Vite + TypeScript)
 │   ├── index.html
 │   ├── main.ts
-│   ├── styles.css
-│   └── hud.html                  # recording indicator
+│   └── styles.css
+├── hud.html                       # recording indicator
 └── vite.config.ts
 ```
 
 ### Technology stack
 
-| Component | Library |
-|---|---|
-| Application shell | Tauri 2 |
-| Audio capture | `cpal` |
-| Speech recognition | `whisper-rs` (whisper.cpp) |
-| Hardware detection | `sysinfo`, `nvidia-smi` |
-| Model distribution | `hf-hub` |
-| Global hotkeys (Linux) | `hotkey-listener` |
-| Global hotkeys (macOS/Windows) | `global-hotkey` |
-| Clipboard access | `arboard` |
-| Text injection (Linux) | `ydotool` |
-| Text injection (macOS/Windows) | `enigo` |
-| Settings persistence | `serde_json`, `dirs` |
+| Component              | Library / Tool                          |
+|------------------------|-----------------------------------------|
+| Application shell      | Tauri 2                                 |
+| Audio capture          | `cpal`                                  |
+| Speech recognition     | `whisper-rs` (whisper.cpp)              |
+| Hardware detection     | `sysinfo`, `nvidia-smi`                 |
+| Model distribution     | `hf-hub`                                |
+| Global hotkeys (Linux) | `hotkey-listener`                       |
+| Global hotkeys (macOS/Windows) | `global-hotkey`                   |
+| Text injection (Linux) | `ydotool`                               |
+| Text injection (macOS/Windows) | `enigo`                          |
+| Clipboard              | `arboard`                               |
+| Settings persistence   | `serde_json` + `dirs`                   |
+
+### Supported models
+
+The model catalog currently ships these Whisper GGML models (English-focused except the large turbo):
+
+| ID                       | File                        | Approx. size |
+|--------------------------|-----------------------------|--------------|
+| `whisper-tiny-en`        | `ggml-tiny.en.bin`          | 75 MB        |
+| `whisper-base-en`        | `ggml-base.en.bin`          | 148 MB       |
+| `whisper-small-en`       | `ggml-small.en.bin`         | 488 MB       |
+| `whisper-medium-en`      | `ggml-medium.en.bin`        | 1.5 GB       |
+| `whisper-large-v3-turbo` | `ggml-large-v3-turbo.bin`   | 1.6 GB       |
+
+Models are downloaded from the official `ggerganov/whisper.cpp` Hugging Face repo and cached under the OS data directory.
 
 ---
 
@@ -70,7 +90,7 @@ localvox/
 
 ### All platforms
 
-- [Rust](https://rustup.rs) (stable)
+- [Rust](https://rustup.rs) (stable toolchain)
 - [Node.js](https://nodejs.org) (LTS)
 
 ### Linux
@@ -82,7 +102,7 @@ sudo apt install -y libwebkit2gtk-4.1-dev build-essential curl wget file \
   libasound2-dev pkg-config libopenblas-dev ydotool
 ```
 
-Text injection requires the `ydotool` service to be configured and running. Create `/etc/systemd/system/ydotool.service` (substitute your own user/group ID from `id -u` / `id -g` if not `1000`):
+**ydotool (text injection)** must be running as a service. Create `/etc/systemd/system/ydotool.service` (replace `1000:1000` with your own UID:GID from `id -u` / `id -g` if different):
 
 ```ini
 [Unit]
@@ -101,79 +121,134 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now ydotool
 ```
 
-Global hotkey support reads keyboard input directly and requires membership in the `input` group:
+**Global hotkeys** require membership in the `input` group:
 
 ```bash
 sudo usermod -aG input $USER
 ```
 
-A logout/login (or reboot) is required for this change to take effect.
+Log out and back in (or reboot) for the group change to take effect.
 
-**Build environment notes:** compiling `whisper-rs` from source may require pointing `bindgen` at your system's C standard library headers, and enabling OpenBLAS acceleration may require setting `BLAS_INCLUDE_DIRS`. Both are environment-specific; consult your distribution's documentation if the build fails on a missing header.
+**Build tips**
 
-### macOS and Windows
+- `whisper-rs` may need `BINDGEN_EXTRA_CLANG_ARGS` pointing at your system C headers.
+- OpenBLAS acceleration may need `BLAS_INCLUDE_DIRS` set.
+- Both are distribution-specific; check your distro docs if the build fails on missing headers.
 
-Implementations exist for hardware-accelerated transcription (Metal / Vulkan), global hotkeys, and text injection on both platforms, but have not been validated on physical hardware — this project has been developed and tested exclusively on Linux. See [Known Limitations](#known-limitations).
+### macOS & Windows
+
+Code paths for Metal / Vulkan acceleration, global hotkeys and text injection exist, but they have **not been validated on real hardware**. Development and testing so far have been Linux-only. See [Known Limitations](#known-limitations).
 
 ---
 
-## Building and Running
+## Building & Running
 
 ```bash
-git clone <repository-url>
+git clone https://github.com/Nsoro-Allan/localvox.git
 cd localvox
 npm install
 npm run tauri dev
 ```
 
-On first launch, Localvox will detect the system's hardware, download an appropriately sized speech model, register the default hotkey, and run in the system tray.
+On first launch LocalVox will:
 
-To produce a distributable build:
+1. Detect hardware and recommend a model tier
+2. Download the appropriate Whisper model
+3. Register the default hotkey
+4. Run in the system tray
+
+To produce a release build:
 
 ```bash
 npm run tauri build
 ```
 
+CI also builds on Ubuntu, macOS and Windows via the GitHub Actions release workflow (triggered on `v*` tags).
+
 ---
 
 ## Usage
 
-1. Select any text field in any application.
+1. Focus any text field in any application.
 2. Hold the configured hotkey (`Ctrl+F9` by default).
 3. Speak.
-4. Release the hotkey. The transcribed text is typed at the current cursor position.
+4. Release the hotkey → transcribed text is typed at the cursor.
 
-The settings window, accessible from the system tray icon, provides:
+Open **Settings** from the system tray icon to:
 
-- Detected hardware specifications and recommended model tier
-- Model selection and switching
-- Hotkey configuration
-- Custom vocabulary
-- Custom correction rules
+- View detected hardware + recommended model tier
+- Switch / download models
+- Rebind the hotkey
+- Manage custom vocabulary
+- Manage find-and-replace correction rules
 
-Configuration is stored at `~/.local/share/localvox/settings.json` on Linux; models are cached at `~/.local/share/localvox/models/`.
+### Configuration locations
+
+| Platform | Settings                         | Models cache                          |
+|----------|----------------------------------|---------------------------------------|
+| Linux    | `~/.local/share/localvox/settings.json` | `~/.local/share/localvox/models/` |
+| macOS    | `~/Library/Application Support/localvox/settings.json` | `~/Library/Application Support/localvox/models/` |
+| Windows  | `%APPDATA%\localvox\settings.json` | `%APPDATA%\localvox\models\`       |
 
 ---
 
 ## Known Limitations
 
-- **Recording indicator placement on Linux/Wayland is best-effort.** The Wayland protocol does not allow applications to set their own window position, and the GNOME compositor does not implement the extension that would normally address this. Positioning may be inconsistent under GNOME/Wayland as a result.
-- **macOS and Windows support is implemented but unverified.** These code paths have not been exercised on real hardware.
-- **No mobile support.** Localvox's interaction model — a system-wide hotkey and text injection into the focused application — has no direct equivalent on Android's application sandboxing model. Mobile support would require a substantially different application design.
-- **No automated post-transcription rewriting.** Correction of spoken false starts or self-corrections (e.g., restating a sentence mid-thought) is not currently implemented.
-- **Model support is limited to the Whisper family.** All model tiers use whisper.cpp-compatible models; alternative architectures would require a separate inference backend.
+- **Recording indicator on Linux/Wayland** is best-effort. Wayland does not allow arbitrary window positioning and GNOME does not implement the relevant extension, so placement can be inconsistent.
+- **macOS and Windows support is implemented but unverified** on physical hardware.
+- **No mobile support.** The interaction model (system-wide hotkey + text injection) does not map cleanly to mobile sandboxing.
+- **No automated post-transcription rewriting** of spoken false starts / self-corrections.
+- **Model support is currently limited to the Whisper family** (whisper.cpp GGML). Adding other architectures would require a new ASR backend.
 
 ---
 
 ## Troubleshooting
 
-| Symptom | Likely Cause |
-|---|---|
-| `pkg-config ... alsa was not found` | Missing ALSA development headers |
-| `fatal error: 'stdbool.h' file not found` during build | See build environment notes above |
-| Hotkey has no effect | Confirm membership in the `input` group and that the session has been restarted since joining |
-| Transcribed text is not typed anywhere | Confirm the `ydotool` service is running: `systemctl status ydotool` |
-| Application stops responding to dictation | Check the settings window for an error notification; most failures are surfaced there |
+| Symptom | Likely cause / fix |
+|---------|--------------------|
+| `pkg-config ... alsa was not found` | Install ALSA development headers (`libasound2-dev`) |
+| `fatal error: 'stdbool.h' file not found` | Set `BINDGEN_EXTRA_CLANG_ARGS` (see build notes) |
+| Hotkey does nothing | Confirm you are in the `input` group and have logged out/in |
+| Transcribed text is never typed | Check `systemctl status ydotool` — the daemon must be running |
+| App stops responding to dictation | Open Settings; most failures appear as notifications there |
+
+---
+
+## Contributing
+
+Contributions are welcome — bug reports, feature requests, platform testing (especially macOS/Windows), and code.
+
+### Development workflow
+
+1. Fork the repository and create a feature branch.
+2. Make your changes. Prefer keeping logic inside the appropriate crate (`audio`, `asr`, `hardware`, `model-manager`, `hotkeys`, `injector`) rather than inside `src-tauri`.
+3. Test locally with `npm run tauri dev`.
+4. Open a pull request against `main` with a clear description of the change and any platform notes.
+
+### Extending / upgrading the project
+
+Useful entry points for common upgrades:
+
+| Goal | Where to look |
+|------|---------------|
+| Add a new Whisper model | `crates/model-manager/src/lib.rs` → `MANIFEST` |
+| Change model recommendation logic | `crates/hardware` |
+| Improve / replace ASR backend | `crates/asr` (currently only whisper-rs) |
+| Support a new platform for hotkeys | `crates/hotkeys` |
+| Support a new platform for text injection | `crates/injector` |
+| Change the recording HUD | `hud.html` + related Tauri window code in `src-tauri` |
+| Settings UI / new options | `src/` (frontend) + commands in `src-tauri/src/lib.rs` |
+| Pipeline orchestration | `src-tauri/src/lib.rs` (`run_pipeline` and surrounding state) |
+
+The crates are deliberately independent so you can experiment with a single subsystem without touching the whole application.
+
+### Suggested contribution areas
+
+- Real-hardware testing and bug reports for **macOS** and **Windows**
+- Additional language models or multilingual Whisper variants
+- Better Wayland window positioning for the HUD
+- Optional post-processing / LLM polishing layer
+- Packaging improvements (AppImage, Flatpak, deb, etc.)
 
 ---
 
@@ -181,8 +256,10 @@ Configuration is stored at `~/.local/share/localvox/settings.json` on Linux; mod
 
 Licensed under the [MIT License](LICENSE).
 
+---
+
 ## Acknowledgments
 
-- [whisper.cpp](https://github.com/ggerganov/whisper.cpp) and [whisper-rs](https://github.com/tazz4843/whisper-rs) for on-device speech recognition
-- [Tauri](https://tauri.app) for the cross-platform application shell
-- [ydotool](https://github.com/ReimuNotMoe/ydotool) for display-server-independent input simulation on Linux
+- [whisper.cpp](https://github.com/ggerganov/whisper.cpp) and [whisper-rs](https://github.com/tazz4843/whisper-rs) — on-device speech recognition
+- [Tauri](https://tauri.app) — cross-platform application shell
+- [ydotool](https://github.com/ReimuNotMoe/ydotool) — display-server-independent input simulation on Linux
