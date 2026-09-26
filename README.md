@@ -139,6 +139,8 @@ Log out and back in (or reboot) for the group change to take effect.
 
 Code paths for Metal / Vulkan acceleration, global hotkeys and text injection exist, but they have **not been validated on real hardware**. Development and testing so far have been Linux-only. See [Known Limitations](#known-limitations).
 
+> **macOS note:** Official release builds are currently **not code-signed or notarized**. See the [Troubleshooting](#troubleshooting) section for how to open them.
+
 ---
 
 ## Building & Running
@@ -196,6 +198,7 @@ Open **Settings** from the system tray icon to:
 
 - **Recording indicator on Linux/Wayland** is best-effort. Wayland does not allow arbitrary window positioning and GNOME does not implement the relevant extension, so placement can be inconsistent.
 - **macOS and Windows support is implemented but unverified** on physical hardware.
+- **macOS builds are not code-signed or notarized.** Gatekeeper will block downloaded builds with a “damaged” warning (see Troubleshooting for the workaround). An Apple Developer ID is required for proper distribution.
 - **No mobile support.** The interaction model (system-wide hotkey + text injection) does not map cleanly to mobile sandboxing.
 - **No automated post-transcription rewriting** of spoken false starts / self-corrections.
 - **Model support is currently limited to the Whisper family** (whisper.cpp GGML). Adding other architectures would require a new ASR backend.
@@ -211,6 +214,28 @@ Open **Settings** from the system tray icon to:
 | Hotkey does nothing | Confirm you are in the `input` group and have logged out/in |
 | Transcribed text is never typed | Check `systemctl status ydotool` — the daemon must be running |
 | App stops responding to dictation | Open Settings; most failures appear as notifications there |
+
+### macOS: “localvox is damaged and can’t be opened”
+
+Official release builds are currently **not code-signed or notarized** (no Apple Developer ID yet).  
+macOS Gatekeeper therefore blocks the app after download and shows a misleading “damaged” warning.
+
+**Temporary fix** (safe for builds downloaded from this repository):
+
+```bash
+# For the .app
+xattr -cr /path/to/localvox.app
+
+# Or for the .dmg before opening it
+xattr -cr /path/to/localvox.dmg
+```
+
+Alternative methods:
+
+- Right-click the app → **Open**
+- System Settings → Privacy & Security → click **Open Anyway** after trying to launch it once
+
+After the first successful launch the app should open normally.
 
 ---
 
