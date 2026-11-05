@@ -24,20 +24,30 @@ pub enum Tier {
 }
 
 impl Tier {
+    /// Preferred model id for this tier.
+    /// Parakeet is preferred for Balanced/Performance once its backend is ready;
+    /// until then we fall back to the best Whisper that works today.
     pub fn recommended_model(&self) -> &'static str {
-    match self {
-        Tier::Light => "whisper-tiny-en",
-        Tier::Balanced => "whisper-base-en",
-        Tier::Performance => "whisper-medium-en",
-        Tier::MaxAccuracy => "whisper-large-v3-turbo",
+        match self {
+            // Tiny for very constrained machines
+            Tier::Light => "whisper-tiny-en",
+            // Base is safe; once Parakeet backend lands, switch to "parakeet-v3"
+            Tier::Balanced => "whisper-base-en",
+            Tier::Performance => "whisper-small",
+            Tier::MaxAccuracy => "whisper-large-v3-turbo",
+        }
+    }
+
+    /// Future-facing recommendation that prefers Parakeet when the backend exists.
+    pub fn preferred_model_when_parakeet_ready(&self) -> &'static str {
+        match self {
+            Tier::Light => "whisper-tiny-en",
+            Tier::Balanced | Tier::Performance => "parakeet-v3",
+            Tier::MaxAccuracy => "whisper-large-v3-turbo",
+        }
     }
 }
-}
 
-/// Detects an NVIDIA GPU and its VRAM by shelling out to `nvidia-smi`,
-/// which ships with the NVIDIA driver on both Linux and Windows.
-/// Returns None if there's no NVIDIA driver installed (including on
-/// Macs, which never have one).
 fn detect_nvidia_gpu() -> Option<GpuInfo> {
     let output = Command::new("nvidia-smi")
         .args(["--query-gpu=name,memory.total", "--format=csv,noheader,nounits"])
@@ -66,13 +76,15 @@ pub fn detect() -> HardwareProfile {
     let is_apple_silicon = cfg!(target_os = "macos") && cfg!(target_arch = "aarch64");
     let nvidia_gpu = detect_nvidia_gpu();
 
-    HardwareProfile { total_ram_gb, cpu_cores, is_apple_silicon, nvidia_gpu }
+    HardwareProfile {
+        total_ram_gb,
+        cpu_cores,
+        is_apple_silicon,
+        nvidia_gpu,
+    }
 }
 
 pub fn recommend_tier(profile: &HardwareProfile) -> Tier {
-    // Apple Silicon goes straight to Balanced regardless of the RAM/GPU
-    // math below — unified memory + Metal handles Whisper turbo
-    // comfortably even on base M-series chips.
     if profile.is_apple_silicon {
         return Tier::Balanced;
     }
@@ -99,22 +111,37 @@ mod tests {
 
     #[test]
     fn light_tier_for_low_ram_no_gpu() {
-        let profile = HardwareProfile { total_ram_gb: 4.0, cpu_cores: 4, is_apple_silicon: false, nvidia_gpu: None };
+        let profile = HardwareProfile {
+            total_ram_gb: 4.0,
+            cpu_cores: 4,
+            is_apple_silicon: false,
+            nvidia_gpu: None,
+        };
         assert_eq!(recommend_tier(&profile), Tier::Light);
     }
 
     #[test]
     fn performance_tier_for_good_gpu() {
         let profile = HardwareProfile {
-            total_ram_gb: 16.0, cpu_cores: 16, is_apple_silicon: false,
-            nvidia_gpu: Some(GpuInfo { name: "RTX 4070".into(), vram_mb: 12_000 }),
+            total_ram_gb: 16.0,
+            cpu_cores: 16,
+            is_apple_silicon: false,
+            nvidia_gpu: Some(GpuInfo {
+                name: "RTX 4070".into(),
+                vram_mb: 12_000,
+            }),
         };
         assert_eq!(recommend_tier(&profile), Tier::Performance);
     }
 
     #[test]
     fn apple_silicon_always_balanced() {
-        let profile = HardwareProfile { total_ram_gb: 8.0, cpu_cores: 8, is_apple_silicon: true, nvidia_gpu: None };
+        let profile = HardwareProfile {
+            total_ram_gb: 8.0,
+            cpu_cores: 8,
+            is_apple_silicon: true,
+            nvidia_gpu: None,
+        };
         assert_eq!(recommend_tier(&profile), Tier::Balanced);
     }
 }

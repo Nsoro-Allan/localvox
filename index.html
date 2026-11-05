@@ -20,53 +20,108 @@
       <button id="dismiss-warning" aria-label="Dismiss">✕</button>
     </div>
 
-    <section class="panel">
-      <h2>Hardware</h2>
-      <dl id="hardware-info" class="specs"></dl>
-    </section>
+    <nav class="tabs">
+      <button class="tab active" data-tab="main">Main</button>
+      <button class="tab" data-tab="history">History</button>
+      <button class="tab" data-tab="advanced">Advanced</button>
+    </nav>
 
-    <section class="panel">
-      <h2>Model</h2>
-      <div id="model-list"></div>
-      <p id="model-progress" class="progress"></p>
-    </section>
+    <div id="tab-main" class="tab-panel active">
+      <section class="panel">
+        <h2>Hardware</h2>
+        <dl id="hardware-info" class="specs"></dl>
+      </section>
 
-    <section class="panel">
-      <h2>Hotkey</h2>
-      <div class="hotkey-row">
-        <label><input type="checkbox" id="mod-ctrl" /> Ctrl</label>
-        <label><input type="checkbox" id="mod-alt" /> Alt</label>
-        <label><input type="checkbox" id="mod-shift" /> Shift</label>
-        <select id="trigger-key">
-          <option>F1</option><option>F2</option><option>F3</option><option>F4</option>
-          <option>F5</option><option>F6</option><option>F7</option><option>F8</option>
-          <option>F9</option><option>F10</option><option>F11</option><option>F12</option>
-          <option>ScrollLock</option><option>Pause</option><option>Insert</option>
-        </select>
-        <button id="save-hotkey">Save</button>
-      </div>
-      <p id="hotkey-status" class="progress"></p>
-    </section>
+      <section class="panel">
+        <h2>Model</h2>
+        <p class="hint">Whisper models work today. Parakeet / Canary are catalogued and downloadable; their inference backends are being added next.</p>
+        <div id="model-list"></div>
+        <p id="model-progress" class="progress"></p>
+      </section>
 
-    <section class="panel">
-      <h2>Vocabulary</h2>
-      <p class="hint">One word or phrase per line — names, acronyms, or jargon the model tends to mishear.</p>
-      <textarea id="vocab-input" rows="4" placeholder="Localvox&#10;whisper.cpp&#10;Tauri"></textarea>
-      <div class="panel-actions">
-        <button id="save-vocab">Save vocabulary</button>
-      </div>
-    </section>
+      <section class="panel">
+        <h2>Hotkey</h2>
+        <div class="hotkey-row">
+          <label><input type="checkbox" id="mod-ctrl" /> Ctrl</label>
+          <label><input type="checkbox" id="mod-alt" /> Alt</label>
+          <label><input type="checkbox" id="mod-shift" /> Shift</label>
+          <select id="trigger-key">
+            <option>F1</option><option>F2</option><option>F3</option><option>F4</option>
+            <option>F5</option><option>F6</option><option>F7</option><option>F8</option>
+            <option>F9</option><option>F10</option><option>F11</option><option>F12</option>
+            <option>ScrollLock</option><option>Pause</option><option>Insert</option>
+          </select>
+          <button id="save-hotkey">Save</button>
+        </div>
+        <p id="hotkey-status" class="progress"></p>
+      </section>
 
-    <section class="panel">
-      <h2>Corrections</h2>
-      <p class="hint">Exact find-and-replace fixes, applied after transcription.</p>
-      <div id="replacement-rows"></div>
-      <div class="panel-actions">
-        <button id="add-rule" type="button">+ Add rule</button>
-        <button id="save-rules">Save corrections</button>
-      </div>
-    </section>
+      <section class="panel">
+        <h2>Vocabulary</h2>
+        <p class="hint">One word or phrase per line — names, acronyms, or jargon the model tends to mishear.</p>
+        <textarea id="vocab-input" rows="4" placeholder="Localvox&#10;whisper.cpp&#10;Tauri"></textarea>
+        <div class="panel-actions">
+          <button id="save-vocab">Save vocabulary</button>
+        </div>
+      </section>
 
+      <section class="panel">
+        <h2>Corrections</h2>
+        <p class="hint">Exact find-and-replace fixes, applied after transcription.</p>
+        <div id="replacement-rows"></div>
+        <div class="panel-actions">
+          <button id="add-rule" type="button">+ Add rule</button>
+          <button id="save-rules">Save corrections</button>
+        </div>
+      </section>
+    </div>
+
+    <div id="tab-history" class="tab-panel">
+      <section class="panel">
+        <h2>Transcription History</h2>
+        <div class="panel-actions">
+          <button id="refresh-history">Refresh</button>
+          <button id="clear-history" class="danger">Clear unstarred</button>
+        </div>
+        <div id="history-list" class="history-list"></div>
+      </section>
+    </div>
+
+    <div id="tab-advanced" class="tab-panel">
+      <section class="panel">
+        <h2>Local LLM Post-processing</h2>
+        <p class="hint">Optional cleanup via a local Ollama endpoint (grammar, punctuation, filler removal). Requires Ollama running.</p>
+        <label class="toggle-row">
+          <input type="checkbox" id="pp-enabled" />
+          Enable post-processing
+        </label>
+        <label>Endpoint
+          <input type="text" id="pp-endpoint" value="http://127.0.0.1:11434" />
+        </label>
+        <label>Model
+          <input type="text" id="pp-model" value="llama3.2" placeholder="llama3.2 / qwen2.5:3b / …" />
+        </label>
+        <label>Prompt template (use {text})
+          <textarea id="pp-prompt" rows="4"></textarea>
+        </label>
+        <div class="panel-actions">
+          <button id="pp-ping">Test connection</button>
+          <button id="pp-save">Save</button>
+        </div>
+        <p id="pp-status" class="progress"></p>
+      </section>
+
+      <section class="panel">
+        <h2>Transcribe audio file</h2>
+        <p class="hint">Select a WAV file (16 kHz mono preferred). Other formats may need conversion first.</p>
+        <input type="text" id="file-path" placeholder="/path/to/recording.wav" style="width:100%" />
+        <div class="panel-actions">
+          <button id="transcribe-file">Transcribe</button>
+        </div>
+        <p id="file-result" class="progress"></p>
+        <pre id="file-output" class="file-output hidden"></pre>
+      </section>
+    </div>
   </main>
   <script type="module" src="/src/main.ts"></script>
 </body>

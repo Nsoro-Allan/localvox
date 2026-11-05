@@ -12,11 +12,13 @@ struct StatusItem(MenuItem<tauri::Wry>);
 
 struct AppState {
     current_model: Mutex<String>,
-    transcriber: Mutex<Option<asr::Transcriber>>,
+    /// Trait-object backend so we can swap Whisper / Parakeet later.
+    backend: Mutex<Option<Box<dyn asr::AsrBackend>>>,
     hotkey_combo: Mutex<String>,
     hotkey_rebind_tx: Mutex<Option<std::sync::mpsc::Sender<String>>>,
     vocabulary: Mutex<Vec<String>>,
     replacements: Mutex<Vec<ReplacementRule>>,
+    postprocess: Mutex<postprocess::PostProcessConfig>,
     ready: Mutex<bool>,
 }
 
@@ -32,8 +34,14 @@ struct HardwareInfo {
 #[derive(Serialize, Clone)]
 struct ModelInfo {
     id: String,
+    display_name: String,
     size_mb: u64,
+    family: String,
+    description: String,
+    languages: String,
+    recommended: bool,
     downloaded: bool,
+    backend_ready: bool,
 }
 
 #[derive(serde::Serialize, serde::Deserialize)]
@@ -42,6 +50,7 @@ struct Settings {
     model_id: Option<String>,
     vocabulary: Vec<String>,
     replacements: Vec<ReplacementRule>,
+    postprocess: postprocess::PostProcessConfig,
 }
 
 impl Default for Settings {
@@ -51,6 +60,7 @@ impl Default for Settings {
             model_id: None,
             vocabulary: Vec::new(),
             replacements: Vec::new(),
+            postprocess: postprocess::PostProcessConfig::default(),
         }
     }
 }
@@ -124,6 +134,8 @@ fn fix_digit_sequences(text: &str) -> String {
     .to_string()
 }
 
+// ---------- Tauri commands ----------
+
 #[tauri::command]
 fn get_hardware_info() -> HardwareInfo {
     let profile = hardware::detect();
@@ -145,7 +157,19 @@ fn list_models() -> Vec<ModelInfo> {
             let downloaded = model_manager::models_dir()
                 .map(|dir| dir.join(m.file).exists())
                 .unwrap_or(false);
-            ModelInfo { id: m.id.to_string(), size_mb: m.size_mb, downloaded }
+            // Whisper family is ready; others are catalog-only for now.
+            let backend_ready = m.family == "whisper";
+            ModelInfo {
+                id: m.id.to_string(),
+                display_name: m.display_name.to_string(),
+                size_mb: m.size_mb,
+                family: m.family.to_string(),
+                description: m.description.to_string(),
+                languages: m.languages.to_string(),
+                recommended: m.recommended,
+                downloaded,
+                backend_ready,
+            }
         })
         .collect()
 }
@@ -156,24 +180,34 @@ fn get_current_model(state: tauri::State<Arc<AppState>>) -> String {
 }
 
 #[tauri::command]
-async fn switch_model(app: tauri::AppHandle, state: tauri::State<'_, Arc<AppState>>, model_id: String) -> Result<(), String> {
+async fn switch_model(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, Arc<AppState>>,
+    model_id: String,
+) -> Result<(), String> {
     let entry = model_manager::find_model(&model_id).ok_or_else(|| "unknown model".to_string())?;
 
-    app.emit("model-switch-progress", format!("Downloading {}...", entry.id)).ok();
+    app.emit(
+        "model-switch-progress",
+        format!("Downloading {}...", entry.display_name),
+    )
+    .ok();
 
     let app_for_task = app.clone();
-    let result = tauri::async_runtime::spawn_blocking(move || -> anyhow::Result<asr::Transcriber> {
+    let model_id_clone = model_id.clone();
+    let result = tauri::async_runtime::spawn_blocking(move || -> anyhow::Result<Box<dyn asr::AsrBackend>> {
         let path = model_manager::download_model(entry)?;
-        app_for_task.emit("model-switch-progress", "Loading model...".to_string()).ok();
-        let path_str = path.to_str().ok_or_else(|| anyhow::anyhow!("invalid model path"))?;
-        asr::Transcriber::load(path_str)
+        app_for_task
+            .emit("model-switch-progress", "Loading model...".to_string())
+            .ok();
+        asr::load_backend(&model_id_clone, &path)
     })
     .await
     .map_err(|e| format!("background task panicked: {e}"))?;
 
     match result {
-        Ok(transcriber) => {
-            *state.transcriber.lock().unwrap() = Some(transcriber);
+        Ok(backend) => {
+            *state.backend.lock().unwrap() = Some(backend);
             *state.current_model.lock().unwrap() = model_id.clone();
 
             let mut settings = load_settings();
@@ -238,15 +272,108 @@ fn is_ready(state: tauri::State<Arc<AppState>>) -> bool {
     *state.ready.lock().unwrap()
 }
 
+// ---------- History ----------
+
+#[tauri::command]
+fn get_history(limit: Option<usize>) -> Vec<history::HistoryEntry> {
+    history::list(limit.unwrap_or(50))
+}
+
+#[tauri::command]
+fn star_history(id: String, starred: bool) -> Result<(), String> {
+    history::star(&id, starred).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn delete_history(id: String) -> Result<(), String> {
+    history::delete(&id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn clear_history() -> Result<(), String> {
+    history::clear_unstarred().map_err(|e| e.to_string())
+}
+
+// ---------- Post-processing settings ----------
+
+#[tauri::command]
+fn get_postprocess(state: tauri::State<Arc<AppState>>) -> postprocess::PostProcessConfig {
+    state.postprocess.lock().unwrap().clone()
+}
+
+#[tauri::command]
+fn set_postprocess(
+    state: tauri::State<Arc<AppState>>,
+    config: postprocess::PostProcessConfig,
+) -> Result<(), String> {
+    *state.postprocess.lock().unwrap() = config.clone();
+    let mut settings = load_settings();
+    settings.postprocess = config;
+    save_settings(&settings);
+    Ok(())
+}
+
+#[tauri::command]
+fn ping_ollama(endpoint: String) -> bool {
+    postprocess::ping(&endpoint)
+}
+
+// ---------- Audio file transcription ----------
+
+#[tauri::command]
+async fn transcribe_file(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, Arc<AppState>>,
+    path: String,
+) -> Result<String, String> {
+    let path_clone = path.clone();
+    let samples = tauri::async_runtime::spawn_blocking(move || asr::load_wav_as_16k_mono(&path_clone))
+        .await
+        .map_err(|e| format!("task panicked: {e}"))?
+        .map_err(|e| e.to_string())?;
+
+    let prompt = state.vocabulary.lock().unwrap().join(", ");
+    let text = {
+        let guard = state.backend.lock().unwrap();
+        let backend = guard.as_ref().ok_or("no model loaded")?;
+        backend.transcribe(&samples, &prompt).map_err(|e| e.to_string())?
+    };
+
+    let rules = state.replacements.lock().unwrap().clone();
+    let corrected = apply_replacements(&fix_digit_sequences(&text), &rules);
+
+    // Optional post-process
+    let pp = state.postprocess.lock().unwrap().clone();
+    let final_text = if pp.enabled {
+        match postprocess::process(&pp, &corrected) {
+            Ok(t) => t,
+            Err(e) => {
+                app.emit(
+                    "pipeline-warning",
+                    format!("Post-process failed, using raw: {e}"),
+                )
+                .ok();
+                corrected
+            }
+        }
+    } else {
+        corrected
+    };
+
+    let _ = history::add(&final_text, "file", Some(path));
+    Ok(final_text)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let state = Arc::new(AppState {
         current_model: Mutex::new(String::new()),
-        transcriber: Mutex::new(None),
+        backend: Mutex::new(None),
         hotkey_combo: Mutex::new(String::new()),
         hotkey_rebind_tx: Mutex::new(None),
         vocabulary: Mutex::new(Vec::new()),
         replacements: Mutex::new(Vec::new()),
+        postprocess: Mutex::new(postprocess::PostProcessConfig::default()),
         ready: Mutex::new(false),
     });
 
@@ -263,11 +390,21 @@ pub fn run() {
             set_vocabulary,
             get_replacements,
             set_replacements,
-            is_ready
+            is_ready,
+            get_history,
+            star_history,
+            delete_history,
+            clear_history,
+            get_postprocess,
+            set_postprocess,
+            ping_ollama,
+            transcribe_file,
         ])
         .setup(move |app| {
-            let status_item = MenuItem::with_id(app, "status", "Status: starting...", false, None::<&str>)?;
-            let settings_item = MenuItem::with_id(app, "settings", "Open Settings", true, None::<&str>)?;
+            let status_item =
+                MenuItem::with_id(app, "status", "Status: starting...", false, None::<&str>)?;
+            let settings_item =
+                MenuItem::with_id(app, "settings", "Open Settings", true, None::<&str>)?;
             let quit_item = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
             let menu = Menu::with_items(app, &[&status_item, &settings_item, &quit_item])?;
 
@@ -286,16 +423,17 @@ pub fn run() {
                 })
                 .build(app)?;
 
-            let hud_window = tauri::WebviewWindowBuilder::new(app, "hud", tauri::WebviewUrl::App("hud.html".into()))
-                .decorations(false)
-                .transparent(true)
-                .always_on_top(true)
-                .skip_taskbar(true)
-                .resizable(false)
-                .shadow(false)
-                .inner_size(120.0, 44.0)
-                .visible(false)
-                .build()?;
+            let hud_window =
+                tauri::WebviewWindowBuilder::new(app, "hud", tauri::WebviewUrl::App("hud.html".into()))
+                    .decorations(false)
+                    .transparent(true)
+                    .always_on_top(true)
+                    .skip_taskbar(true)
+                    .resizable(false)
+                    .shadow(false)
+                    .inner_size(120.0, 44.0)
+                    .visible(false)
+                    .build()?;
 
             if let Ok(Some(monitor)) = hud_window.primary_monitor() {
                 let size = monitor.size();
@@ -304,7 +442,9 @@ pub fn run() {
                 let win_h = 44.0;
                 let x = (size.width as f64 / scale - win_w) / 2.0;
                 let y = size.height as f64 / scale - win_h - 40.0;
-                hud_window.set_position(tauri::Position::Logical(tauri::LogicalPosition::new(x, y))).ok();
+                hud_window
+                    .set_position(tauri::Position::Logical(tauri::LogicalPosition::new(x, y)))
+                    .ok();
             }
 
             app.manage(StatusItem(status_item));
@@ -325,7 +465,12 @@ pub fn run() {
             thread::spawn(move || {
                 if let Err(e) = run_pipeline(handle.clone(), pipeline_state) {
                     eprintln!("pipeline error: {e:?}");
-                    handle.emit("pipeline-warning", format!("Localvox failed to start: {e}")).ok();
+                    handle
+                        .emit(
+                            "pipeline-warning",
+                            format!("Localvox failed to start: {e}"),
+                        )
+                        .ok();
                 }
             });
 
@@ -342,7 +487,7 @@ fn set_status(app: &tauri::AppHandle, text: &str) {
     app.emit("pipeline-status", text.to_string()).ok();
 
     if let Some(hud) = app.get_webview_window("hud") {
-        if text.contains("listening") || text.contains("transcribing") {
+        if text.contains("listening") || text.contains("transcribing") || text.contains("post-processing") {
             hud.show().ok();
         } else {
             hud.hide().ok();
@@ -359,6 +504,7 @@ fn run_pipeline(app: tauri::AppHandle, state: Arc<AppState>) -> anyhow::Result<(
         _ => {
             let profile = hardware::detect();
             let tier = hardware::recommend_tier(&profile);
+            // Prefer a Whisper model that is guaranteed to work today.
             tier.recommended_model().to_string()
         }
     };
@@ -366,12 +512,13 @@ fn run_pipeline(app: tauri::AppHandle, state: Arc<AppState>) -> anyhow::Result<(
     let model_path = model_manager::download_model(entry)?;
 
     set_status(&app, "loading model...");
-    let transcriber = asr::Transcriber::load(model_path.to_str().unwrap())?;
-    *state.transcriber.lock().unwrap() = Some(transcriber);
+    let backend = asr::load_backend(&model_id, &model_path)?;
+    *state.backend.lock().unwrap() = Some(backend);
     *state.current_model.lock().unwrap() = model_id;
 
     *state.vocabulary.lock().unwrap() = settings.vocabulary.clone();
     *state.replacements.lock().unwrap() = settings.replacements.clone();
+    *state.postprocess.lock().unwrap() = settings.postprocess.clone();
 
     let (rebind_tx, rebind_rx) = std::sync::mpsc::channel::<String>();
     *state.hotkey_rebind_tx.lock().unwrap() = Some(rebind_tx);
@@ -399,7 +546,11 @@ fn run_pipeline(app: tauri::AppHandle, state: Arc<AppState>) -> anyhow::Result<(
                     *state.hotkey_combo.lock().unwrap() = new_combo;
                 }
                 Err(e) => {
-                    app.emit("pipeline-warning", format!("Failed to rebind hotkey: {e}")).ok();
+                    app.emit(
+                        "pipeline-warning",
+                        format!("Failed to rebind hotkey: {e}"),
+                    )
+                    .ok();
                 }
             }
         }
@@ -418,29 +569,62 @@ fn run_pipeline(app: tauri::AppHandle, state: Arc<AppState>) -> anyhow::Result<(
                     set_status(&app, "transcribing...");
                     let resampled = audio::resample_linear(&buffer, live.sample_rate, 16_000);
                     let text_result = {
-                        let guard = state.transcriber.lock().unwrap();
+                        let guard = state.backend.lock().unwrap();
                         let prompt = state.vocabulary.lock().unwrap().join(", ");
-                        guard.as_ref().map(|t| t.transcribe_with_prompt(&resampled, &prompt))
+                        guard
+                            .as_ref()
+                            .map(|t| t.transcribe(&resampled, &prompt))
                     };
 
-                    let final_text = match text_result {
+                    let raw_text = match text_result {
                         Some(Ok(text)) if !text.is_empty() => {
                             let rules = state.replacements.lock().unwrap().clone();
                             let corrected = fix_digit_sequences(&text);
                             Some(apply_replacements(&corrected, &rules))
                         }
                         Some(Err(e)) => {
-                            app.emit("pipeline-warning", format!("Transcription failed: {e}")).ok();
+                            app.emit(
+                                "pipeline-warning",
+                                format!("Transcription failed: {e}"),
+                            )
+                            .ok();
                             None
                         }
                         _ => None,
                     };
 
+                    let final_text = if let Some(text) = raw_text {
+                        let pp = state.postprocess.lock().unwrap().clone();
+                        if pp.enabled {
+                            set_status(&app, "post-processing...");
+                            match postprocess::process(&pp, &text) {
+                                Ok(cleaned) => Some(cleaned),
+                                Err(e) => {
+                                    app.emit(
+                                        "pipeline-warning",
+                                        format!("Post-process failed: {e}"),
+                                    )
+                                    .ok();
+                                    Some(text)
+                                }
+                            }
+                        } else {
+                            Some(text)
+                        }
+                    } else {
+                        None
+                    };
+
                     set_status(&app, "Running");
 
                     if let Some(text) = final_text {
+                        let _ = history::add(&text, "live", None);
                         if let Err(e) = injector.inject(&text) {
-                            app.emit("pipeline-warning", format!("Couldn't type the text: {e}")).ok();
+                            app.emit(
+                                "pipeline-warning",
+                                format!("Couldn't type the text: {e}"),
+                            )
+                            .ok();
                         }
                     }
                 }
@@ -470,14 +654,22 @@ fn run_pipeline(app: tauri::AppHandle, state: Arc<AppState>) -> anyhow::Result<(
 }
 
 fn reconnect_audio(app: &tauri::AppHandle, live: &mut audio::LiveStream) {
-    app.emit("pipeline-warning", "Audio input lost — reconnecting...".to_string()).ok();
+    app.emit(
+        "pipeline-warning",
+        "Audio input lost — reconnecting...".to_string(),
+    )
+    .ok();
     set_status(app, "reconnecting audio...");
     loop {
         thread::sleep(Duration::from_secs(2));
         if let Ok(new_stream) = audio::start_stream() {
             *live = new_stream;
             set_status(app, "Running");
-            app.emit("pipeline-warning", "Audio input reconnected.".to_string()).ok();
+            app.emit(
+                "pipeline-warning",
+                "Audio input reconnected.".to_string(),
+            )
+            .ok();
             return;
         }
     }

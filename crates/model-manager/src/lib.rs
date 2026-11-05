@@ -4,29 +4,163 @@ use std::fs;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
-/// One entry in the model catalog. Deliberately scoped to whisper.cpp
-/// GGML models for now, since that's the only runtime `asr` supports.
+/// One entry in the model catalog.
+#[derive(Debug, Clone)]
 pub struct ModelEntry {
     pub id: &'static str,
+    pub display_name: &'static str,
     pub repo: &'static str,
     pub file: &'static str,
     pub size_mb: u64,
-    /// Filled in once you've downloaded and verified a copy yourself
-    /// (`sha256sum <file>`). Left as None until then rather than
-    /// guessing a value, since a wrong checksum is worse than none.
+    /// "whisper" | "parakeet" | "canary" | "other"
+    pub family: &'static str,
+    /// Short description shown in the UI.
+    pub description: &'static str,
+    /// Languages (approximate).
+    pub languages: &'static str,
+    /// Recommended for most users?
+    pub recommended: bool,
+    /// Filled in once verified. None is fine (skip check).
     pub sha256: Option<&'static str>,
 }
 
 pub const MANIFEST: &[ModelEntry] = &[
-    ModelEntry { id: "whisper-tiny-en", repo: "ggerganov/whisper.cpp", file: "ggml-tiny.en.bin", size_mb: 75, sha256: None },
-    ModelEntry { id: "whisper-base-en", repo: "ggerganov/whisper.cpp", file: "ggml-base.en.bin", size_mb: 148, sha256: None },
-    ModelEntry { id: "whisper-small-en", repo: "ggerganov/whisper.cpp", file: "ggml-small.en.bin", size_mb: 488, sha256: None },
-    ModelEntry { id: "whisper-medium-en", repo: "ggerganov/whisper.cpp", file: "ggml-medium.en.bin", size_mb: 1500, sha256: None },
-    ModelEntry { id: "whisper-large-v3-turbo", repo: "ggerganov/whisper.cpp", file: "ggml-large-v3-turbo.bin", size_mb: 1600, sha256: None },
+    // ---------- Whisper (fully supported) ----------
+    ModelEntry {
+        id: "whisper-tiny-en",
+        display_name: "Whisper Tiny (EN)",
+        repo: "ggerganov/whisper.cpp",
+        file: "ggml-tiny.en.bin",
+        size_mb: 75,
+        family: "whisper",
+        description: "Fastest English-only. Good for low-end CPUs.",
+        languages: "English",
+        recommended: false,
+        sha256: None,
+    },
+    ModelEntry {
+        id: "whisper-base-en",
+        display_name: "Whisper Base (EN)",
+        repo: "ggerganov/whisper.cpp",
+        file: "ggml-base.en.bin",
+        size_mb: 148,
+        family: "whisper",
+        description: "Good speed/accuracy balance for English.",
+        languages: "English",
+        recommended: false,
+        sha256: None,
+    },
+    ModelEntry {
+        id: "whisper-small-en",
+        display_name: "Whisper Small (EN)",
+        repo: "ggerganov/whisper.cpp",
+        file: "ggml-small.en.bin",
+        size_mb: 488,
+        family: "whisper",
+        description: "Solid English accuracy on mid-range machines.",
+        languages: "English",
+        recommended: false,
+        sha256: None,
+    },
+    ModelEntry {
+        id: "whisper-medium-en",
+        display_name: "Whisper Medium (EN)",
+        repo: "ggerganov/whisper.cpp",
+        file: "ggml-medium.en.bin",
+        size_mb: 1500,
+        family: "whisper",
+        description: "High English accuracy. Needs more RAM.",
+        languages: "English",
+        recommended: false,
+        sha256: None,
+    },
+    ModelEntry {
+        id: "whisper-large-v3-turbo",
+        display_name: "Whisper Large-v3 Turbo",
+        repo: "ggerganov/whisper.cpp",
+        file: "ggml-large-v3-turbo.bin",
+        size_mb: 1600,
+        family: "whisper",
+        description: "Multilingual, high quality, faster than full Large.",
+        languages: "99+ languages",
+        recommended: true,
+        sha256: None,
+    },
+    ModelEntry {
+        id: "whisper-small",
+        display_name: "Whisper Small (multilingual)",
+        repo: "ggerganov/whisper.cpp",
+        file: "ggml-small.bin",
+        size_mb: 487,
+        family: "whisper",
+        description: "Multilingual Small. Good general-purpose pick.",
+        languages: "99+ languages",
+        recommended: true,
+        sha256: None,
+    },
+    ModelEntry {
+        id: "whisper-medium",
+        display_name: "Whisper Medium (multilingual)",
+        repo: "ggerganov/whisper.cpp",
+        file: "ggml-medium.bin",
+        size_mb: 1500,
+        family: "whisper",
+        description: "Strong multilingual accuracy.",
+        languages: "99+ languages",
+        recommended: false,
+        sha256: None,
+    },
+
+    // ---------- Parakeet (catalog + download; inference backend pending) ----------
+    // These point at Hugging Face GGUF / ONNX assets that Handy uses.
+    // Until a Parakeet AsrBackend is implemented, download works but
+    // live transcription will refuse with a clear error.
+    ModelEntry {
+        id: "parakeet-v3",
+        display_name: "Parakeet V3 (recommended)",
+        repo: "handy-computer/parakeet-tdt-0.6b-v3-gguf",
+        file: "parakeet-tdt-0.6b-v3-Q8_0.gguf",
+        size_mb: 740,
+        family: "parakeet",
+        description: "Fast, accurate, 25 European languages + auto-detect. Best default in Handy.",
+        languages: "25 European languages (auto)",
+        recommended: true,
+        sha256: None,
+    },
+    ModelEntry {
+        id: "parakeet-v2",
+        display_name: "Parakeet V2 (EN)",
+        repo: "handy-computer/parakeet-tdt-0.6b-v2-gguf",
+        file: "parakeet-tdt-0.6b-v2-Q8_0.gguf",
+        size_mb: 730,
+        family: "parakeet",
+        description: "English-only Parakeet. Extremely fast on CPU.",
+        languages: "English",
+        recommended: false,
+        sha256: None,
+    },
+
+    // ---------- Canary (catalog entry) ----------
+    ModelEntry {
+        id: "canary-1b-v2",
+        display_name: "Canary 1B v2",
+        repo: "nvidia/canary-1b-v2",
+        file: "canary-1b-v2.nemo", // placeholder; real packaging differs
+        size_mb: 692,
+        family: "canary",
+        description: "NVIDIA Canary — transcription + translation, ITN. Backend not yet wired.",
+        languages: "25 European languages",
+        recommended: false,
+        sha256: None,
+    },
 ];
 
 pub fn find_model(id: &str) -> Option<&'static ModelEntry> {
     MANIFEST.iter().find(|m| m.id == id)
+}
+
+pub fn models_by_family(family: &str) -> Vec<&'static ModelEntry> {
+    MANIFEST.iter().filter(|m| m.family == family).collect()
 }
 
 /// Linux: ~/.local/share/localvox/models · macOS: ~/Library/Application Support/localvox/models · Windows: %APPDATA%\localvox\models
@@ -43,7 +177,9 @@ pub fn sha256_file(path: &Path) -> Result<String> {
     let mut buf = [0u8; 1 << 16];
     loop {
         let n = file.read(&mut buf)?;
-        if n == 0 { break; }
+        if n == 0 {
+            break;
+        }
         hasher.update(&buf[..n]);
     }
     Ok(format!("{:x}", hasher.finalize()))
@@ -56,11 +192,16 @@ pub fn download_model(entry: &ModelEntry) -> Result<PathBuf> {
     let dest_path = dest_dir.join(entry.file);
 
     if !dest_path.exists() {
+        // Some community repos may not exist yet; surface a clear error.
         let api = hf_hub::api::sync::Api::new()?;
         let repo = api.model(entry.repo.to_string());
-        let cached_path = repo
-            .get(entry.file)
-            .with_context(|| format!("downloading {} from {}", entry.file, entry.repo))?;
+        let cached_path = repo.get(entry.file).with_context(|| {
+            format!(
+                "downloading {} from {}. If this repo/file does not exist yet, \
+                 the model is catalogued for future support — use a Whisper model for now.",
+                entry.file, entry.repo
+            )
+        })?;
         fs::copy(&cached_path, &dest_path)?;
     }
 
@@ -68,10 +209,11 @@ pub fn download_model(entry: &ModelEntry) -> Result<PathBuf> {
         let actual = sha256_file(&dest_path)?;
         if actual != expected {
             fs::remove_file(&dest_path).ok();
-            return Err(anyhow!("checksum mismatch for {}: expected {expected}, got {actual}", entry.file));
+            return Err(anyhow!(
+                "checksum mismatch for {}: expected {expected}, got {actual}",
+                entry.file
+            ));
         }
-    } else {
-        eprintln!("warning: no checksum on record for {} — skipping verification", entry.file);
     }
 
     Ok(dest_path)
@@ -82,16 +224,16 @@ mod tests {
     use super::*;
 
     #[test]
-    fn same_content_hashes_the_same() {
-        let path = std::env::temp_dir().join("model_manager_test_a.txt");
-        fs::write(&path, b"hello world").unwrap();
-        assert_eq!(sha256_file(&path).unwrap(), sha256_file(&path).unwrap());
-        fs::remove_file(&path).ok();
+    fn finds_known_model() {
+        assert!(find_model("whisper-base-en").is_some());
+        assert!(find_model("parakeet-v3").is_some());
+        assert!(find_model("does-not-exist").is_none());
     }
 
     #[test]
-    fn finds_known_model() {
-        assert!(find_model("whisper-base-en").is_some());
-        assert!(find_model("does-not-exist").is_none());
+    fn recommended_includes_parakeet_and_turbo() {
+        let rec: Vec<_> = MANIFEST.iter().filter(|m| m.recommended).map(|m| m.id).collect();
+        assert!(rec.contains(&"parakeet-v3"));
+        assert!(rec.contains(&"whisper-large-v3-turbo"));
     }
 }

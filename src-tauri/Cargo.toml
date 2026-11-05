@@ -1,7 +1,7 @@
 [package]
 name = "localvox"
 version = "0.1.0"
-description = "A Tauri App"
+description = "A Transcription app."
 authors = ["you"]
 edition = "2021"
 
@@ -31,4 +31,7 @@ hardware = { path = "../crates/hardware" }
 model-manager = { path = "../crates/model-manager" }
 hotkeys = { path = "../crates/hotkeys" }
 injector = { path = "../crates/injector" }
+history = { path = "../crates/history" }
+postprocess = { path = "../crates/postprocess" }
 anyhow = "1"
+chrono = { version = "0.4", default-features = false, features = ["clock", "std", "serde"] }

@@ -1953,6 +1953,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "history"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "dirs 5.0.1",
+ "serde",
+ "serde_json",
+ "uuid",
+]
+
+[[package]]
 name = "hotkey-listener"
 version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2592,11 +2604,14 @@ dependencies = [
  "anyhow",
  "asr",
  "audio",
+ "chrono",
  "dirs 5.0.1",
  "hardware",
+ "history",
  "hotkeys",
  "injector",
  "model-manager",
+ "postprocess",
  "regex",
  "serde",
  "serde_json",
@@ -3386,6 +3401,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a106d1259c23fac8e543272398ae0e3c0b8d33c88ed73d0cc71b0f1d902618"
 dependencies = [
  "portable-atomic",
+]
+
+[[package]]
+name = "postprocess"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "serde",
+ "serde_json",
+ "ureq",
 ]
 
 [[package]]
