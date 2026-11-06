@@ -3,6 +3,29 @@
 version = 4
 
 [[package]]
+name = "LocalVox"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "asr",
+ "audio",
+ "chrono",
+ "dirs 5.0.1",
+ "hardware",
+ "history",
+ "hotkeys",
+ "injector",
+ "model-manager",
+ "postprocess",
+ "regex",
+ "serde",
+ "serde_json",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-opener",
+]
+
+[[package]]
 name = "adler2"
 version = "2.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2596,29 +2619,6 @@ name = "litemap"
 version = "0.8.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "47d9d19d1d6efa0109d2f65ff4c85cddd50bd572e5a00127ab10987290bcefae"
-
-[[package]]
-name = "localvox"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "asr",
- "audio",
- "chrono",
- "dirs 5.0.1",
- "hardware",
- "history",
- "hotkeys",
- "injector",
- "model-manager",
- "postprocess",
- "regex",
- "serde",
- "serde_json",
- "tauri",
- "tauri-build",
- "tauri-plugin-opener",
-]
 
 [[package]]
 name = "lock_api"

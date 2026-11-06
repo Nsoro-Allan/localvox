@@ -114,7 +114,11 @@
       <section class="panel">
         <h2>Transcribe audio file</h2>
         <p class="hint">Select a WAV file (16 kHz mono preferred). Other formats may need conversion first.</p>
-        <input type="text" id="file-path" placeholder="/path/to/recording.wav" style="width:100%" />
+        <div class="file-pick-row">
+          <input type="text" id="file-path" placeholder="/path/to/recording.wav" />
+          <input type="file" id="file-upload" accept="audio/*,.wav,.mp3,.ogg,.flac,.m4a" hidden />
+          <button type="button" id="file-browse">Upload</button>
+        </div>
         <div class="panel-actions">
           <button id="transcribe-file">Transcribe</button>
         </div>

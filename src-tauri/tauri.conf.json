@@ -14,7 +14,7 @@
     "macOSPrivateApi": true,
     "windows": [
       {
-        "title": "localvox",
+        "title": "LocalVox",
         "width": 800,
         "height": 600
       }

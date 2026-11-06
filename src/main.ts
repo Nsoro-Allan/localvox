@@ -134,12 +134,6 @@ async function loadModels() {
       badge.textContent = "recommended";
       title.appendChild(badge);
     }
-    if (!model.backend_ready) {
-      const badge = document.createElement("span");
-      badge.className = "badge warn";
-      badge.textContent = "backend soon";
-      title.appendChild(badge);
-    }
     const meta = document.createElement("div");
     meta.className = "model-meta";
     meta.textContent = `${model.family} · ${model.size_mb} MB · ${model.languages}${model.downloaded ? "" : " · not downloaded"}`;
@@ -375,6 +369,17 @@ document.querySelector("#pp-ping")!.addEventListener("click", async () => {
 });
 
 // ---------- File transcription ----------
+
+// File browse (fills the path input; keeps manual typing)
+const filePathInput = document.querySelector<HTMLInputElement>("#file-path")!;
+const fileUpload = document.querySelector<HTMLInputElement>("#file-upload")!;
+document.querySelector("#file-browse")!.addEventListener("click", () => fileUpload.click());
+fileUpload.addEventListener("change", () => {
+  const file = fileUpload.files?.[0] as File & { path?: string } | undefined;
+  if (!file) return;
+  // Tauri / Chromium expose a real filesystem path on File.path when available
+  filePathInput.value = file.path || file.name;
+});
 
 document.querySelector("#transcribe-file")!.addEventListener("click", async () => {
   const path = (document.querySelector("#file-path") as HTMLInputElement).value.trim();

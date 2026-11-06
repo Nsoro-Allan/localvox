@@ -1,5 +1,5 @@
 [package]
-name = "localvox"
+name = "LocalVox"
 version = "0.1.0"
 description = "A Transcription app."
 authors = ["you"]
