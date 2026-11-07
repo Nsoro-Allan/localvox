@@ -25,24 +25,13 @@ pub enum Tier {
 
 impl Tier {
     /// Preferred model id for this tier.
-    /// Parakeet is preferred for Balanced/Performance once its backend is ready;
-    /// until then we fall back to the best Whisper that works today.
     pub fn recommended_model(&self) -> &'static str {
         match self {
             // Tiny for very constrained machines
             Tier::Light => "whisper-tiny-en",
-            // Base is safe; once Parakeet backend lands, switch to "parakeet-v3"
+            // Base is a safe default on mid-range hardware
             Tier::Balanced => "whisper-base-en",
             Tier::Performance => "whisper-small",
-            Tier::MaxAccuracy => "whisper-large-v3-turbo",
-        }
-    }
-
-    /// Future-facing recommendation that prefers Parakeet when the backend exists.
-    pub fn preferred_model_when_parakeet_ready(&self) -> &'static str {
-        match self {
-            Tier::Light => "whisper-tiny-en",
-            Tier::Balanced | Tier::Performance => "parakeet-v3",
             Tier::MaxAccuracy => "whisper-large-v3-turbo",
         }
     }

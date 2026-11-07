@@ -110,49 +110,6 @@ pub const MANIFEST: &[ModelEntry] = &[
         recommended: false,
         sha256: None,
     },
-
-    // ---------- Parakeet (catalog + download; inference backend pending) ----------
-    // These point at Hugging Face GGUF / ONNX assets that Handy uses.
-    // Until a Parakeet AsrBackend is implemented, download works but
-    // live transcription will refuse with a clear error.
-    ModelEntry {
-        id: "parakeet-v3",
-        display_name: "Parakeet V3 (recommended)",
-        repo: "handy-computer/parakeet-tdt-0.6b-v3-gguf",
-        file: "parakeet-tdt-0.6b-v3-Q8_0.gguf",
-        size_mb: 740,
-        family: "parakeet",
-        description: "Fast, accurate, 25 European languages + auto-detect. Best default in Handy.",
-        languages: "25 European languages (auto)",
-        recommended: true,
-        sha256: None,
-    },
-    ModelEntry {
-        id: "parakeet-v2",
-        display_name: "Parakeet V2 (EN)",
-        repo: "handy-computer/parakeet-tdt-0.6b-v2-gguf",
-        file: "parakeet-tdt-0.6b-v2-Q8_0.gguf",
-        size_mb: 730,
-        family: "parakeet",
-        description: "English-only Parakeet. Extremely fast on CPU.",
-        languages: "English",
-        recommended: false,
-        sha256: None,
-    },
-
-    // ---------- Canary (catalog entry) ----------
-    ModelEntry {
-        id: "canary-1b-v2",
-        display_name: "Canary 1B v2",
-        repo: "nvidia/canary-1b-v2",
-        file: "canary-1b-v2.nemo", // placeholder; real packaging differs
-        size_mb: 692,
-        family: "canary",
-        description: "NVIDIA Canary — transcription + translation, ITN. Backend not yet wired.",
-        languages: "25 European languages",
-        recommended: false,
-        sha256: None,
-    },
 ];
 
 pub fn find_model(id: &str) -> Option<&'static ModelEntry> {
@@ -192,7 +149,6 @@ pub fn download_model(entry: &ModelEntry) -> Result<PathBuf> {
     let dest_path = dest_dir.join(entry.file);
 
     if !dest_path.exists() {
-        // Some community repos may not exist yet; surface a clear error.
         let api = hf_hub::api::sync::Api::new()?;
         let repo = api.model(entry.repo.to_string());
         let cached_path = repo.get(entry.file).with_context(|| {
@@ -226,14 +182,14 @@ mod tests {
     #[test]
     fn finds_known_model() {
         assert!(find_model("whisper-base-en").is_some());
-        assert!(find_model("parakeet-v3").is_some());
+        assert!(find_model("whisper-large-v3-turbo").is_some());
         assert!(find_model("does-not-exist").is_none());
     }
 
     #[test]
-    fn recommended_includes_parakeet_and_turbo() {
+    fn recommended_includes_turbo_and_small() {
         let rec: Vec<_> = MANIFEST.iter().filter(|m| m.recommended).map(|m| m.id).collect();
-        assert!(rec.contains(&"parakeet-v3"));
         assert!(rec.contains(&"whisper-large-v3-turbo"));
+        assert!(rec.contains(&"whisper-small"));
     }
 }
